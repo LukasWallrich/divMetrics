@@ -1,0 +1,363 @@
+---
+title: "Comparing metrics for continuous attributes"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{metrics_comparison}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(divMetrics)
+library(tidyverse)
+library(GGally)
+library(viridis)  # For color scales
+```
+
+
+## Introduction
+
+This analysis aims to calculate and compare five diversity scores for teams of size 5 and 10, drawn from an age distribution ranging from 25 to 65. We will use the following diversity measures:
+
+#. Blau's Index with 5-year binning
+#. Blau's Index with 10-year binning
+#. Coefficient of Variation (CV)
+#. Standard Deviation (SD)
+#. Coverage & Evenness Index (CEI)
+#. Rao-Simpson Index with 5-year binning (RSI)
+#. Rao-Simpson Index with 10-year binning (RSI)
+
+## Generate Team Data
+
+To generate teams with a full spectrum of diversity, we introduce a diversity parameter sampled from a Beta distribution for each team. This parameter controls the probability of team members being sampled from a narrow versus a uniform distribution, thus resulting in a low/high diversity team.
+
+```{r generate-teams, message=FALSE}
+set.seed(123)  # Set seed for reproducibility
+ages <- seq(25, 65, by = 1)
+
+# Function to generate team ages with controlled diversity
+generate_team <- function(size, n_teams, alpha = 2, beta = 5) {
+  p_diversity <- rbeta(n_teams, alpha, beta)  # Diversity parameter for each team
+  
+  teams_list <- vector("list", n_teams)
+  
+  for (i in 1:n_teams) {
+    p <- p_diversity[i]
+    
+    # Define the probability of selecting from a narrow range vs. the entire age range
+    prob_narrow <- p
+    prob_uniform <- 1 - p
+    
+    # Define a narrow age range (e.g., mean age ± 5 years)
+    mean_age <- sample(30:60, 1)
+    narrow_range <- (mean_age - 5):(mean_age + 5)
+    narrow_range <- narrow_range[narrow_range >= 25 & narrow_range <= 65]
+    
+    # Define probabilities
+    probs <- rep(prob_uniform / length(ages), length(ages))
+    probs[narrow_range - 24] <- prob_narrow / length(narrow_range)
+    
+    # Sample team members
+    team_ages <- sample(ages, size = size, replace = TRUE, prob = probs)
+    
+    teams_list[[i]] <- tibble(
+      team_id = paste0("Team_", size, "_", i),
+      age = team_ages,
+      team_size = size
+    )
+  }
+  
+  bind_rows(teams_list)
+}
+
+# Create teams of size 5 and 10 with enhanced diversity simulation
+teams_size_5 <- generate_team(5, 5000) %>% mutate(team_size = 5)
+teams_size_10 <- generate_team(10, 5000) %>% mutate(team_size = 10)
+
+# Combine all teams
+teams <- bind_rows(teams_size_5, teams_size_10)
+```
+
+
+## Calculate Diversity Scores
+
+### Calculate Scores
+
+```{r calculate-scores}
+div_scores <- teams %>%
+  group_by(team_size) %>%
+  reframe(
+    CEI = compute_CEI(age, team_id, range = c(min(teams$age), max(teams$age)), na.rm = TRUE),
+    Rao_Simpson_5 = compute_Rao(age, team_id, bins = seq(25, 65, by = 5), na.rm = TRUE),
+    Rao_Simpson_10 = compute_Rao(age, team_id, bins = seq(25, 65, by = 10), na.rm = TRUE),
+    Blau_5 = compute_Blau(age, team_id, bins = seq(25, 65, by = 5), na.rm = TRUE),
+    Blau_10 = compute_Blau(age, team_id, bins = seq(25, 65, by = 10), na.rm = TRUE),
+    CV = compute_cv(age, team_id, na.rm = TRUE),
+    SD = compute_sd(age, team_id, na.rm = TRUE),
+    team_members = paste(age, collapse = ", "),
+    .groups = "drop"
+  )
+```
+
+## Visualize Diversity Score Distributions
+
+To compare the distribution of all diversity measures across different team sizes, we will use violin plots faceted by team size. This approach, using *normalized* scores, provides a clear visualization of the distribution shape and spread for each measure.
+
+```{r visualize-violins, fig.width=12, fig.height=8}
+# Reshape data to long format for easier plotting
+div_long <- div_scores %>%
+  mutate(across(CEI:SD, ~c(scale(.x, center = FALSE)))) %>% 
+  pivot_longer(cols = CEI:SD, names_to = "Measure", values_to = "Value") %>% 
+  mutate(team_size = paste("Teams of", team_size) %>% factor(levels = c("Teams of 5", "Teams of 10")))
+
+# Create violin plots
+ggplot(div_long, aes(x = Measure, y = Value, fill = Measure)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  facet_wrap(~ team_size, scales = "free") +
+  scale_fill_viridis(discrete = TRUE, option = "C") +
+  #theme_minimal() +
+  labs(
+    title = "Distribution of Diversity Measures by Team Size ...",
+    subtitle = "... divided by their standard deviation for comparabiity",
+    x = "Diversity Measure",
+    y = "Score",
+    fill = "Measure"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## Correlation Analysis
+
+```{r correlation-analysis, fig.width=8, fig.height=6}
+div_scores %>%
+  select(CEI:SD) %>%
+  timesaveR::cor_matrix() %>% 
+  timesaveR::report_cor_table()
+```
+
+## Measures Divergence
+
+Next we explore where diversity measures diverge. For that, we plot the associations and identify the greatest residuals.
+
+```{r}
+library(ggplot2)
+library(patchwork)
+
+plot_group <- function(members, range = c(25, 65)) {
+  if (is.character(members)) {
+    members <- timesaveR::line_to_vector(members, return = "vector") %>% as.numeric()
+  }
+  
+  ESI <- compute_ESI_dual(members, range = range)
+  ESI_E <-  compute_ESI_dual(members, range = range, return = "E")
+  ESI_S <-  compute_ESI_dual(members, range = range, return = "S")
+  range_obs <- max(members) - min(members)
+
+  if (length(range) != 2) {
+    stop("Range must be a vector of length 2.")
+  }
+  
+  # Create a data frame for plotting
+  plot_data <- data.frame(members = members)
+  
+  # Create a ggplot
+  p <- ggplot(plot_data, aes(x = members)) +
+    geom_dotplot(stackdir = "center", fill = "blue", binwidth = 1) +
+    annotate("segment", x = range[1], xend = range[2], y = 0, yend = 0, 
+             color = "gray", size = 1) +
+    annotate("text", x = mean(range), y = .3, label = paste0("ESI = ", round(ESI, 2), 
+                                                                        " (E = ", round(ESI_E, 2), ", S = ", round(ESI_S, 2), ") | ",
+                                                                        "Range = ", range_obs),
+             color = "black", size = 3.5) +
+    scale_x_continuous(limits = range, breaks = seq(range[1], range[2], by = 5)) + 
+    theme_void() +
+      theme(aspect.ratio = .2)
+
+}
+
+
+contrast_plots <- function(groups, title = "Contrast Plots") {
+  if (!is.vector(groups) || is.null(names(groups))) {
+    stop("Input must be a named vector where names represent group labels.")
+  }
+  
+  plots <- lapply(names(groups), function(group_name) {
+    members <- groups[[group_name]]
+    plot_group(members) +
+      ggtitle(group_name) +
+      theme(plot.title = element_text(hjust = 0.5, size = 12))
+  })
+  
+  combined_plot <- Reduce(`+`, plots) + 
+    plot_layout(ncol = length(groups)) +
+    plot_annotation(title = title, theme = theme(plot.title = element_text(size = 12, hjust = 0.5)))
+  
+  return(combined_plot)
+}
+
+```
+
+
+
+```{r divergence_blau5, fig.width=10, fig.height=6}
+p <- div_scores %>% 
+  filter(team_size == 5) %>%
+  ggplot(aes(x = ESI_dual, y = Blau_5)) +
+  geom_smooth(method = "lm", se = FALSE) +
+  geom_point(alpha = 0.5) +
+  scale_color_viridis(discrete = TRUE, option = "D") +
+  theme_minimal() +
+  labs(
+    title = "Blau's Index (5-year Binning) vs. ESI",
+    subtitle = "Teams of 5",
+    x = "Even Spread Index (ESI)",
+    y = "Blau's Index (5-year Binning)",
+  ) 
+
+p %>% 
+  ggExtra::ggMarginal(p, type="histogram")
+
+
+outliers <- div_scores %>% 
+  group_by(Blau_5 = round(Blau_5, 2), team_size) %>% 
+  arrange(ESI_dual) %>%
+  # select the largest and smallest ESI_dual per group
+  filter(ESI_dual == max(ESI_dual, na.rm = TRUE) | ESI_dual == min(ESI_dual, na.rm = TRUE)) %>% 
+  mutate(score_type = ifelse(ESI_dual == max(ESI_dual, na.rm = TRUE), "max", "min")) %>% 
+  select(ESI_dual, Blau_5, team_members, team_size, score_type) %>% 
+  ungroup() %>% 
+  arrange(Blau_5)
+```
+
+```{r divergence_blau5_plot, fig.height=15, fig.width=7}
+plots <- list()
+
+for (blau in unique(outliers$Blau_5)) {
+  members <- outliers %>% 
+    arrange(ESI_dual) %>%
+    filter(Blau_5 == blau) %>% 
+    pull(team_members)
+  
+  plots[[as.character(blau)]] <- contrast_plots(members %>% set_names(c("min", "max")), title = paste("Blau's Index =", blau))
+}
+
+Reduce(`/`, lapply(plots, wrap_elements)) +
+  plot_annotation("Spread of ESI within levels of Blau's index (5 categories)")
+
+```
+
+
+```{r divergence_blau10, fig.width=10, fig.height=6}
+p <- div_scores %>% 
+  filter(team_size == 5) %>%
+  ggplot(aes(x = ESI_dual, y = Blau_5)) +
+  geom_smooth(method = "lm", se = FALSE) +
+  geom_point(alpha = 0.5) +
+  scale_color_viridis(discrete = TRUE, option = "D") +
+  theme_minimal() +
+  labs(
+    title = "Blau's Index (5-year Binning) vs. ESI",
+    subtitle = "Teams of 5",
+    x = "Even Spread Index (ESI)",
+    y = "Blau's Index (5-year Binning)",
+  ) 
+
+p %>% 
+  ggExtra::ggMarginal(p, type="histogram")
+
+
+outliers <- div_scores %>% 
+  filter(team_size == 5) %>% 
+  group_by(Blau_5 = round(Blau_5, 2)) %>% 
+  # select the largest and smallest ESI_dual per group
+  filter(ESI_dual == max(ESI_dual, na.rm = TRUE) | ESI_dual == min(ESI_dual, na.rm = TRUE)) %>% 
+  select(ESI_dual, Blau_5, team_members) %>% 
+  ungroup() %>% 
+  arrange(Blau_5)
+```
+
+```{r divergence_blau10_plot, fig.height=15, fig.width=7}
+plots <- list()
+
+for (blau in unique(outliers$Blau_10)) {
+  members <- outliers %>% 
+    arrange(ESI_dual) %>%
+    filter(Blau_10 == blau) %>% 
+    pull(team_members)
+  
+  plots[[as.character(blau)]] <- contrast_plots(members %>% set_names(c("min", "max")), title = paste("Blau's Index =", blau))
+}
+
+Reduce(`/`, lapply(plots, wrap_elements)) +
+  plot_annotation("Spread of ESI within levels of Blau's index (10 categories)")
+
+```
+
+
+
+```{r measures-divergence, fig.width=10, fig.height=6}
+ggplot(div_scores, aes(x = ESI, y = Blau_10, color = ESI_group)) +
+  geom_point(alpha = 0.7) +
+  facet_wrap(~ team_size) +
+  scale_color_viridis(discrete = TRUE, option = "D") +
+  theme_minimal() +
+  labs(
+    title = "Blau's Index (10-year Binning) vs. ESI",
+    x = "Even Spread Index (ESI)",
+    y = "Blau's Index (10-year Binning)",
+    color = "ESI Group"
+  )
+
+ggplot(div_scores, aes(x = ESI, y = CV, color = ESI_group)) +
+  geom_point(alpha = 0.7) +
+  facet_wrap(~ team_size) +
+  scale_color_viridis(discrete = TRUE, option = "D") +
+  theme_minimal() +
+  labs(
+    title = "Coefficient of Variation (CV) vs. ESI",
+    x = "Even Spread Index (ESI)",
+    y = "Coefficient of Variation (CV)",
+    color = "ESI Group"
+  )
+
+ggplot(div_scores, aes(x = ESI, y = SD, color = ESI_group)) +
+  geom_point(alpha = 0.7) +
+  facet_wrap(~ team_size) +
+  scale_color_viridis(discrete = TRUE, option = "D") +
+  theme_minimal() +
+  labs(
+    title = "Standard Deviation (SD) vs. ESI",
+    x = "Even Spread Index (ESI)",
+    y = "Standard Deviation (SD)",
+    color = "ESI Group"
+  )
+
+
+
+
+```
+
+Alternatively, to visualize multiple measures simultaneously, we can use a parallel coordinates plot or facet multiple measures in a single plot. Here, we'll provide individual scatter plots for clarity.
+
+## Summary
+
+In this analysis, we generated teams of two different sizes (5 and 10) with a comprehensive range of diversity levels by controlling the diversity parameter through a Beta distribution. Five diversity metrics—Even Spread Index (ESI), Blau's Index (with 5-year and 10-year binning), Coefficient of Variation (CV), and Standard Deviation (SD)—were computed for each team.
+
+**Key Findings:**
+
+- **Distribution of Diversity Measures:** Violin plots revealed the distribution and spread of each diversity measure across different team sizes. Measures like ESI and Blau's Index showed varying distributions, indicating different sensitivities to team diversity.
+
+- **Correlation Analysis:** The correlation matrix indicated strong correlations between certain measures (e.g., CV and SD) while others showed weaker relationships. This suggests that while some diversity metrics capture similar aspects of diversity, others may provide unique insights.
+
+- **Measures Divergence:** By categorizing teams based on ESI, we observed instances where other diversity measures diverged. For example, some teams with high ESI might have lower Blau's Index, highlighting that different metrics can capture different dimensions of diversity.
+
+This comprehensive approach allows for a nuanced understanding of team diversity, emphasizing the importance of selecting appropriate diversity measures based on the specific attributes and contexts of interest.
+
+Further research could explore additional diversity dimensions, incorporate other demographic variables, or assess the impact of diversity on team performance and dynamics.
