@@ -19,6 +19,7 @@ library(divMetrics)
 library(tidyverse)
 library(GGally)
 library(viridis)  # For color scales
+library(ggrepel) # For text annotation in chart
 ```
 
 
@@ -101,8 +102,8 @@ div_scores <- teams %>%
     Blau_10 = compute_Blau(age, team_id, bins = seq(25, 65, by = 10), na.rm = TRUE),
     CV = compute_cv(age, team_id, na.rm = TRUE),
     SD = compute_sd(age, team_id, na.rm = TRUE),
-    team_members = paste(age, collapse = ", "),
-    .groups = "drop"
+    team_members = report_teams(age, team_id),
+   .groups = "drop"
   )
 ```
 
@@ -142,6 +143,120 @@ div_scores %>%
   timesaveR::report_cor_table()
 ```
 
+Key points to note:
+- CEI is uniformly related to both variety and variance-based measures, with correlation coefficients close to .7
+- Blau's index strongly depends on the width of bins, with the two specifications only correlating at .75. This effect is much weaker for the Rao-Simpson index, which correlates at .93.
+
+## Illustrative comparison
+
+```{r illustrative-comparison}
+example_teams <- bind_rows(
+  tibble(ages = c(20, 30, 40, 50, 60), team = "A"),
+  tibble(ages = c(20, 60, 60, 60, 60), team = "B"),
+  tibble(ages = c(20, 20, 20, 20, 60), team = "C"),
+  tibble(ages = c(29, 30, 49, 50, 60), team = "D"),
+  tibble(ages = c(30, 31, 50, 51, 61), team = "E"),
+  tibble(ages = c(20, 20, 20, 29, 30), team = "F")
+)
+example_scores <- example_teams %>%
+  reframe(
+    CEI = compute_CEI(ages, team, range = c(min(example_teams$ages), max(example_teams$ages)), na.rm = TRUE),
+    Rao_5 = compute_Rao(ages, team, bins = seq(20, 65, by = 5), na.rm = TRUE),
+    Rao_10 = compute_Rao(ages, team, bins = seq(20, 70, by = 10), na.rm = TRUE),
+    Blau_5 = compute_Blau(ages, team, bins = seq(20, 65, by = 5), na.rm = TRUE),
+    Blau_10 = compute_Blau(ages, team, bins = seq(20, 70, by = 10), na.rm = TRUE),
+    CV = compute_cv(ages, team, na.rm = TRUE),
+    SD = compute_sd(ages, team, na.rm = TRUE),
+    team = names(compute_sd(ages, team, na.rm = TRUE)),
+    team_members = report_teams(ages, team)
+  )
+
+example_scores_long <- example_scores %>%
+  pivot_longer(
+    cols = c(
+      CV, SD, Blau_5, Blau_10,
+      Rao_5, Rao_10, CEI
+    ),
+    names_to = "Index",
+    values_to = "Score"
+  ) %>%
+  group_by(Index) %>%
+  mutate(Score = scale(Score, center = FALSE)) %>%
+  ungroup()
+
+# Reorder factor levels for Index
+example_scores_long$Index <- factor(example_scores_long$Index,
+  levels = c(
+    "CV", "SD", "Blau_5", "Blau_10"
+    , "Rao_5", "Rao_10", "CEI"
+  )
+)
+
+# Define line types and colors to highlight clusters:
+line_types <- c(
+  "A" = "solid",
+  "B" = "dashed", "C" = "dashed",
+  "D" = "dotdash", "E" = "dotdash",
+  "F" = "longdash"
+)
+
+team_colors <- c(
+  "A" = "black",
+  "B" = "darkred",  "C" = "red",
+  "D" = "darkblue", "E" = "blue",
+  "F" = "forestgreen"
+)
+
+p <- ggplot(
+  example_scores_long,
+  aes(
+    x = Index, y = Score, group = team,
+    linetype = team, color = team
+  )
+) +
+  geom_line(aes(size = team)) +
+  geom_point() +
+  scale_linetype_manual(values = line_types) +
+  scale_color_manual(values = team_colors) +
+  scale_size_manual(values = c(
+    "A" = 1.2, "B" = 0.8, "C" = 0.8,
+    "D" = 0.8, "E" = 0.8, "F" = 0.8
+  )) +
+  labs(
+    title = "Comparison of Normalised Diversity Indices",
+    x = "", y = ""
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    plot.margin = margin(t = 20, r = 10, b = 20, l = 50)
+  ) +
+  scale_x_discrete(
+    expand = expansion(mult = c(0.2, 0.05)),
+    labels = c(
+      "CV" = "CV",
+      "SD" = "SD",
+      "Blau_5" = "Blau (5)",
+      "Blau_10" = "Blau (10)"
+    )
+  )
+
+label_data <- example_scores_long %>%
+  filter(Index == "CV") %>%
+  select(Index, team, Score, team_members)
+
+p + geom_text_repel(
+  data = label_data,
+  aes(label = paste0(team, ": ", team_members), x = Index, y = Score),
+  nudge_x = -.75,
+  vjust = 0.5,
+  size = 3
+) +
+  scale_y_continuous(position = "right")
+
+```
+
+
 ## Measures Divergence
 
 Next we explore where diversity measures diverge. For that, we plot the associations and identify the greatest residuals.
@@ -155,9 +270,9 @@ plot_group <- function(members, range = c(25, 65)) {
     members <- timesaveR::line_to_vector(members, return = "vector") %>% as.numeric()
   }
   
-  ESI <- compute_ESI_dual(members, range = range)
-  ESI_E <-  compute_ESI_dual(members, range = range, return = "E")
-  ESI_S <-  compute_ESI_dual(members, range = range, return = "S")
+  CEI <- compute_CEI(members, range = range)
+  CEI_E <-  compute_CEI(members, range = range, return = "E")
+  CEI_C <-  compute_CEI(members, range = range, return = "C")
   range_obs <- max(members) - min(members)
 
   if (length(range) != 2) {
@@ -172,8 +287,8 @@ plot_group <- function(members, range = c(25, 65)) {
     geom_dotplot(stackdir = "center", fill = "blue", binwidth = 1) +
     annotate("segment", x = range[1], xend = range[2], y = 0, yend = 0, 
              color = "gray", size = 1) +
-    annotate("text", x = mean(range), y = .3, label = paste0("ESI = ", round(ESI, 2), 
-                                                                        " (E = ", round(ESI_E, 2), ", S = ", round(ESI_S, 2), ") | ",
+    annotate("text", x = mean(range), y = .3, label = paste0("ESI = ", round(CEI, 2), 
+                                                                        " (E = ", round(CEI_E, 2), ", S = ", round(CEI_C, 2), ") | ",
                                                                         "Range = ", range_obs),
              color = "black", size = 3.5) +
     scale_x_continuous(limits = range, breaks = seq(range[1], range[2], by = 5)) + 
