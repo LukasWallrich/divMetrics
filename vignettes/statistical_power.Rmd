@@ -1,0 +1,289 @@
+---
+title: "Assessing statistical power depending on measure"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{metrics_comparison}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(divMetrics)
+library(tidyverse)
+library(GGally)
+library(viridis)  # For color scales
+library(ggrepel) # For text annotation in chart
+library(ggtext)
+
+library(pwr)
+
+library(furrr)
+library(progressr)
+plan(multisession) 
+```
+
+
+## Introduction
+
+This analysis aims to identify whether different diversity indices have different statistical power to pick up diversity effects. For that, we will model diversity effects roughly in line with Hong & Page (2004) and the extension to smoothed landscapes proposed by Grim and colleagues (2019).
+
+Specifically, we imagine that a team is tasked with finding the best solution to a problem - and then model that search for the best solution as exploring a hilly landscape where each point represents a possible outcome with a quality value. Each team member starts at a different spot on this landscape—here determined by a single attribute that shapes their perspective, such as their age. From their starting point, each member “climbs” to a nearby peak by always moving to a slightly better neighboring solution until no further improvement is possible. The team’s overall performance is measured by the best peak that any member reaches. In this case, diversity means having team members start from varied positions, which increases the chance that at least one person finds a particularly high peak in the landscape. This is in line with models of informational diversity, and allows us to model outcome data - and then test whether different diversity indices give us different statistical power to pick up such an effect.
+
+## Simulation Setup
+
+```{r}
+#--- Simulation setup ---
+## Generate landscape of a given length and smoothness
+generate_landscape <- function(n, lower = 0, upper = 100, smooth_window = 3) {
+  raw_points <- runif(n, min = lower, max = upper)
+  smooth_points <- stats::filter(raw_points, rep(1/smooth_window, smooth_window), sides = 2)
+  smooth_points[is.na(smooth_points)] <- raw_points[is.na(smooth_points)]
+  as.numeric(smooth_points)
+}
+
+hill_climb <- function(start, landscape) {
+  if (start > length(landscape) || start < 1) stop("Starting position out of bounds.")
+  pos <- start
+  repeat {
+    left_val <- if (pos > 1) landscape[pos - 1] else -Inf
+    right_val <- if (pos < length(landscape)) landscape[pos + 1] else -Inf
+    current <- landscape[pos]
+    if (left_val <= current && right_val <= current) break
+    pos <- if (left_val >= right_val) pos - 1 else pos + 1
+  }
+  landscape[pos]
+}
+
+team_hill_climb <- function(team_starts, landscape) {
+  peaks <- sapply(team_starts, function(start) hill_climb(start, landscape))
+  max(peaks)
+}
+
+generate_team <- function(size, n_teams, alpha = 2, beta = 5) {
+  ages <- seq(25, 65, by = 1)
+  p_diversity <- rbeta(n_teams, alpha, beta)
+  teams_list <- vector("list", n_teams)
+  
+  for (i in seq_len(n_teams)) {
+    p <- p_diversity[i]
+    prob_narrow <- p
+    prob_uniform <- 1 - p
+    mean_age <- sample(30:60, 1)
+    narrow_range <- (mean_age - 5):(mean_age + 5)
+    narrow_range <- narrow_range[narrow_range >= 25 & narrow_range <= 65]
+    probs <- rep(prob_uniform / length(ages), length(ages))
+    probs[narrow_range - 24] <- prob_narrow / length(narrow_range)
+    team_ages <- sample(ages, size = size, replace = TRUE, prob = probs)
+    teams_list[[i]] <- tibble(team_id = paste0("Team_", size, "_", i),
+                              age = team_ages,
+                              team_size = size)
+  }
+  dplyr::bind_rows(teams_list)
+}
+
+#--- A helper function to run one "condition" (factorial cell) ---
+# Simulation function that returns detailed team scores
+run_simulation <- function(team_size, smooth_window, n_teams = 250, n_landscapes = 250) {
+  teams <- generate_team(team_size, n_teams)
+  
+  # Calculate diversity metrics per team
+  team_data <- teams %>% 
+    reframe(
+      compute_CEI(age, team_id, range = c(min(teams$age), max(teams$age)), return_df = TRUE),
+      Rao_Simpson_5 = compute_Rao(age, team_id, bins = seq(25, 65, by = 5)),
+      Rao_Simpson_10 = compute_Rao(age, team_id, bins = seq(25, 65, by = 10)),
+      Blau_5 = compute_Blau(age, team_id, bins = seq(25, 65, by = 5)),
+      Blau_10 = compute_Blau(age, team_id, bins = seq(25, 65, by = 10)),
+      CV = compute_cv(age, team_id),
+      SD = compute_sd(age, team_id)
+    ) %>% 
+    rename(CEI = index_value)
+  
+  # Simulate landscapes and team performance
+  landscapes <- map(1:n_landscapes, ~generate_landscape(n = 50, smooth_window = smooth_window))
+  peaks <- tibble(id = 1:(nrow(team_data) * length(landscapes)),
+                  team = NA_character_,
+                  result = NA_real_,
+                  landscape_id = NA_integer_)
+  i <- 1
+  for (landscape_idx in seq_along(landscapes)) {
+    landscape <- landscapes[[landscape_idx]]
+    for (team in team_data$group) {
+      team_members <- (team_data %>% 
+                         filter(group == team) %>% 
+                         pull(group_members) %>% 
+                         timesaveR::line_to_vector(return = "vector")) - 20
+      peak <- team_hill_climb(team_members, landscape)
+      peaks[i, ] <- list(i, team, peak, landscape_idx)
+      i <- i + 1
+    }
+  }
+  
+  # Scale performance (result) per landscape
+  peaks <- peaks %>% 
+    group_by(landscape_id) %>% 
+    mutate(result = scale(result, center = FALSE)) %>% 
+    ungroup()
+  
+  # Merge team diversity details
+  peaks_joined <- peaks %>% 
+    left_join(team_data, by = c("team" = "group"))
+  
+  peaks_joined
+}
+
+```
+
+## Run simulations
+
+
+```{r}
+set.seed(1234)
+# Simulation parameters
+total_teams <- 250
+total_landscapes <- 250
+chunks <- 25
+
+# Define factorial conditions and replications
+conditions <- expand.grid(
+  team_size = c(5, 10),
+  smooth_window = c(3, 5)
+) %>%
+  slice(rep(1:n(), each = chunks)) %>%
+  mutate(chunk = rep(1:chunks, times = nrow(expand.grid(team_size = c(5, 10), smooth_window = c(3, 5)))))
+
+# Run simulations in parallel, returning detailed team scores
+results <- with_progress({
+  p <- progressor(steps = nrow(conditions))
+  future_pmap_dfr(
+    conditions,
+    function(team_size, smooth_window, chunk) {
+      sim_data <- run_simulation(team_size, smooth_window, 
+                                 n_teams = total_teams, 
+                                 n_landscapes = ceiling(total_landscapes/chunks))
+      p()  # update progress after each simulation run
+      sim_data %>% 
+        mutate(team_size = team_size,
+               smooth_window = smooth_window,
+               chunk = chunk)
+    },
+    .options = furrr_options(seed = TRUE)
+  )
+})
+
+write_rds(results, "results.rds")
+
+```
+
+## Estimating the effects
+
+```{r}
+# Aggregate team-level performance (average over landscapes) so each team appears once per replication
+team_summary <- results %>%
+  group_by(team_size, smooth_window, chunk, team) %>%
+  summarize(result_mean = mean(result),
+            CEI = first(CEI),
+            Rao_Simpson_5 = first(Rao_Simpson_5),
+            Rao_Simpson_10 = first(Rao_Simpson_10),
+            Blau_5 = first(Blau_5),
+            Blau_10 = first(Blau_10),
+            CV = first(CV),
+            SD = first(SD),
+            .groups = "drop")
+
+# Pivot diversity metrics to long format
+team_long <- team_summary %>%
+  pivot_longer(cols = c(CEI, Rao_Simpson_5, Rao_Simpson_10, Blau_5, Blau_10, CV, SD),
+               names_to = "metric", values_to = "value")
+
+# Compute the correlation (effect size) for each replication, condition, and metric
+replication_corr <- team_long %>%
+  group_by(team_size, smooth_window, chunk, metric) %>%
+  summarize(correlation = cor(result_mean, value, use = "complete.obs"),
+            .groups = "drop") %>%
+  mutate(n_req = purrr::map_dbl(correlation, ~ pwr::pwr.r.test(r = .x, power = 0.9)$n))
+
+# Aggregate across replications: mean effect size, its SE, and the required sample size with 95% CI
+summary_corr <- replication_corr %>%
+  group_by(team_size, smooth_window, metric) %>%
+  summarize(mean_r = mean(correlation),
+            se_r = sd(correlation) / sqrt(n()),
+            mean_n_req = mean(n_req),
+            se_n_req = sd(n_req) / sqrt(n()),
+            lower_n_req = mean_n_req - 1.96 * se_n_req,
+            upper_n_req = mean_n_req + 1.96 * se_n_req,
+            .groups = "drop")
+
+summary_corr
+```
+
+## Power curves
+
+```{r}
+corrs <- summary_corr %>% rename(effect_size = mean_r)
+
+
+
+n_range <- seq(20, 150, by = 20)
+
+power_data <- corrs %>%
+  rowwise() %>%
+  mutate(
+    n = list(n_range),
+    power = list(sapply(n_range, function(n) pwr::pwr.r.test(r = effect_size, n = n)$power))
+  ) %>%
+  tidyr::unnest(cols = c(n, power))
+
+metric_colors <- c(
+  "CEI"            = "#1b9e99",
+  "Rao_Simpson_5"  = "#d95f02",
+  "Rao_Simpson_10" = "#d95f02",
+  "Blau_5"         = "#7570b3",
+  "Blau_10"        = "#7570b3",
+  "CV"             = "#22b93e",
+  "SD"             = "#66a61e"
+)
+
+
+
+metric_linetypes <- c(
+  "CEI"            = "solid",
+  "Rao_Simpson_5"  = "21",
+  "Rao_Simpson_10" = "31",
+  "Blau_5"         = "22",
+  "Blau_10"        = "32",
+  "CV"             = "12",
+  "SD"             = "2111"
+)
+
+power_data$metric <- factor(power_data$metric, levels = names(metric_colors)) %>% relevel("CEI") %>% fct_rev()
+
+
+ggplot(power_data, aes(x = n, y = power, color = metric, linetype = metric)) +
+  geom_line() +
+  geom_hline(yintercept = 0.80, linetype = "dashed", color = "grey40") +
+  scale_color_manual(name = "Metric", values = metric_colors) +
+  scale_linetype_manual(name = "Metric", values = metric_linetypes) +
+  labs(
+    title = "Power Curves for Diversity Metrics",
+    x = "Sample Size",
+    y = "Power"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  facet_grid(~smooth_window + team_size)
+  
+
+
+```
+
+## Summary
+
+...
