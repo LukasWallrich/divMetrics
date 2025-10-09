@@ -93,18 +93,22 @@ teams <- bind_rows(teams_size_5, teams_size_10)
 
 ### Calculate Scores
 
+For clarity, we calculate each metric separately and then join them. Alternatively, you could use `compute_all_metrics()` for a more concise approach.
+
 ```{r calculate-scores}
+# Calculate each metric separately for clarity
 div_scores <- teams %>%
-  group_by(team_size) %>%
-  reframe(
-    compute_CEI(age, team_id, range = c(min(teams$age), max(teams$age)), return_df = TRUE),
-    Rao_Simpson_5 = compute_Rao(age, team_id, bins = seq(25, 65, by = 5)),
-    Rao_Simpson_10 = compute_Rao(age, team_id, bins = seq(25, 65, by = 10)),
-    Blau_5 = compute_Blau(age, team_id, bins = seq(25, 65, by = 5)),
-    Blau_10 = compute_Blau(age, team_id, bins = seq(25, 65, by = 10)),
-    CV = compute_cv(age, team_id),
-    SD = compute_sd(age, team_id)) %>% 
-  rename(CEI = index_value)
+  group_by(team_id, team_size) %>%
+  summarise(
+    CEI = compute_CEI(age, range = c(min(teams$age), max(teams$age))),
+    Rao_Simpson_5 = compute_Rao(age, bins = seq(25, 65, by = 5)),
+    Rao_Simpson_10 = compute_Rao(age, bins = seq(25, 65, by = 10)),
+    Blau_5 = compute_Blau(age, bins = seq(25, 65, by = 5)),
+    Blau_10 = compute_Blau(age, bins = seq(25, 65, by = 10)),
+    CV = compute_cv(age),
+    SD = compute_sd(age),
+    .groups = "drop"
+  )
 ```
 
 ## Visualize Diversity Score Distributions
@@ -158,18 +162,30 @@ example_teams <- bind_rows(
   tibble(ages = c(30, 31, 50, 51, 61), team = "E"),
   tibble(ages = c(20, 20, 20, 29, 30), team = "F")
 )
+
+# Calculate metrics for each team
 example_scores <- example_teams %>%
-  reframe(
-    CEI = compute_CEI(ages, team, range = c(min(example_teams$ages), max(example_teams$ages)), na.rm = TRUE),
-    Rao_5 = compute_Rao(ages, team, bins = seq(20, 65, by = 5), na.rm = TRUE),
-    Rao_10 = compute_Rao(ages, team, bins = seq(20, 70, by = 10), na.rm = TRUE),
-    Blau_5 = compute_Blau(ages, team, bins = seq(20, 65, by = 5), na.rm = TRUE),
-    Blau_10 = compute_Blau(ages, team, bins = seq(20, 70, by = 10), na.rm = TRUE),
-    CV = compute_cv(ages, team, na.rm = TRUE),
-    SD = compute_sd(ages, team, na.rm = TRUE),
-    team_members = report_teams(ages, team),
-    team = names(compute_sd(ages, team, na.rm = TRUE))
+  group_by(team) %>%
+  summarise(
+    CEI = compute_CEI(ages, range = c(min(example_teams$ages), max(example_teams$ages))),
+    Rao_5 = compute_Rao(ages, bins = seq(20, 65, by = 5)),
+    Rao_10 = compute_Rao(ages, bins = seq(20, 70, by = 10)),
+    Blau_5 = compute_Blau(ages, bins = seq(20, 65, by = 5)),
+    Blau_10 = compute_Blau(ages, bins = seq(20, 70, by = 10)),
+    CV = compute_cv(ages),
+    SD = compute_sd(ages),
+    team_members = paste(ages, collapse = ", "),
+    .groups = "drop"
   )
+
+# Quick comparison option using built-in plotting function:
+# plot_metric_comparison(example_scores,
+#                       metrics = c("CV", "SD", "Blau_5", "Blau_10", "Rao_5", "Rao_10", "CEI"),
+#                       group_var = "team",
+#                       group_members_var = "team_members",
+#                       title = "Comparison of Normalised Diversity Indices")
+
+# For this analysis, we create a custom visualization with detailed styling:
 
 example_scores_long <- example_scores %>%
   pivot_longer(
