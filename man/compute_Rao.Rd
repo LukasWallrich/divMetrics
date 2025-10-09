@@ -10,13 +10,14 @@ compute_Rao(
   bin_width = NULL,
   bins = NULL,
   na.rm = FALSE,
-  verbose = FALSE
+  verbose = FALSE,
+  return_df = FALSE
 )
 }
 \arguments{
 \item{x}{Numeric vector.}
 
-\item{group}{Optional grouping variable of the same length as x.}
+\item{group}{Optional grouping variable of the same length as x. Will be converted to a factor if not already.}
 
 \item{bin_width}{Positive numeric value specifying bin width.}
 
@@ -25,9 +26,11 @@ compute_Rao(
 \item{na.rm}{Logical. If TRUE, NA values are removed.}
 
 \item{verbose}{Logical. If TRUE, prints additional messages.}
+
+\item{return_df}{Logical. If TRUE, returns a dataframe with group, group_members and index_value.}
 }
 \value{
-A single Rao's Index value if group is NULL, or a named numeric vector with one value per group if group is provided.
+A single Rao's Index value if group is NULL, or a named numeric vector with one value per group if group is provided (or a data frame if return_df is TRUE).
 }
 \description{
 Computes Rao's Quadratic Entropy for a numeric vector, optionally within groups.

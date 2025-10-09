@@ -1,0 +1,63 @@
+url: https://lukaswallrich.github.io/divMetrics/
+template:
+  bootstrap: 5
+  bootswatch: cosmo
+
+navbar:
+  structure:
+    left:  [home, reference, articles, news]
+    right: [search, github]
+  components:
+    home:
+      icon: fas fa-home fa-lg
+      href: index.html
+      aria-label: Home
+    reference:
+      text: Reference
+      href: reference/index.html
+    articles:
+      text: Articles
+      menu:
+      - text: Comparing Metrics
+        href: articles/metrics_comparison.html
+      - text: Statistical Power
+        href: articles/statistical_power.html
+    news:
+      text: Changelog
+      href: news/index.html
+    github:
+      icon: fab fa-github fa-lg
+      href: https://github.com/LukasWallrich/divMetrics/
+      aria-label: GitHub
+
+reference:
+  - title: "Separation Metrics"
+    desc: "Metrics that measure differences in position along a continuum"
+    contents:
+      - compute_cv
+      - compute_sd
+  - title: "Variety Metrics"
+    desc: "Metrics that capture categorical variety (require binning)"
+    contents:
+      - compute_Blau
+  - title: "Hybrid Metrics"
+    desc: "Metrics that combine multiple aspects of diversity"
+    contents:
+      - compute_Rao
+      - compute_CEI
+  - title: "Utility Functions"
+    desc: "Helper functions for computing and visualizing diversity"
+    contents:
+      - compute_all_metrics
+      - plot_metric_comparison
+      - report_teams
+
+articles:
+  - title: "Vignettes"
+    contents:
+    - metrics_comparison
+    - statistical_power
+
+authors:
+  Lukas Wallrich:
+    href: https://lukaswallrich.github.io

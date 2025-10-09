@@ -1,0 +1,122 @@
+---
+output: github_document
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "man/figures/README-",
+  out.width = "100%"
+)
+```
+
+# divMetrics
+
+<!-- badges: start -->
+<!-- badges: end -->
+
+`divMetrics` provides functions for calculating a range of diversity measures for continuous attributes and visualizing them. The package enables researchers to explore divergences between diversity measures to select one that matches their research questions and theoretical framework.
+
+## Installation
+
+You can install the development version of divMetrics from [GitHub](https://github.com/) with:
+
+``` r
+# install.packages("devtools")
+devtools::install_github("lukaswallrich/divMetrics")
+```
+
+## Overview
+
+Diversity can be conceptualized in different ways (Harrison & Klein, 2007):
+
+- **Variety**: Even spread across the categories represented
+- **Separation**: Differences in position along a continuum (e.g., dispersion)
+- **Disparity**: Inequality
+
+For continuous attributes (e.g., age, tenure), different metrics capture different aspects of diversity. `divMetrics` implements several key measures:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `compute_Blau()` | Variety | Blau's index with binning for continuous data |
+| `compute_cv()` | Separation | Coefficient of variation |
+| `compute_sd()` | Separation | Standard deviation |
+| `compute_CEI()` | Variety | Coverage and Evenness Index |
+| `compute_Rao()` | Variety | Rao's quadratic entropy |
+
+CEI and Rao's index are more complex metrics that aim to capture variety in a way that accounts for the fact that they consider the distribution of values within the range, rather than just distinct bins that may be near or far along the range.
+
+## Basic Usage
+
+### Single Group
+
+Calculate diversity for a single group:
+
+```{r example-single}
+library(divMetrics)
+
+# Example: Age diversity in a team
+ages <- c(25, 28, 32, 45, 52)
+
+# Standard deviation (separation)
+compute_sd(ages)
+
+# Coefficient of variation (disparity)
+compute_cv(ages)
+
+# Blau's index (requires binning)
+compute_Blau(ages, bin_width = 10)
+
+# Coverage and Evenness Index
+compute_CEI(ages, range = c(20, 65))
+```
+
+### Multiple Groups
+
+Compare diversity across multiple teams:
+
+```{r example-groups}
+# Two teams with different age distributions
+ages <- c(25, 28, 32, 45, 52, 30, 31, 32, 33, 34)
+teams <- c(rep("Team A", 5), rep("Team B", 5))
+
+# Calculate CV for each team
+compute_cv(ages, group = teams)
+
+# Calculate Blau's index for each team
+compute_Blau(ages, group = teams, bin_width = 10)
+
+# Get results as a data frame
+compute_Blau(ages, group = teams, bin_width = 10, return_df = TRUE)
+```
+
+## Choosing a Metric
+
+Different metrics emphasize different aspects of diversity:
+
+- **SD**: Prioritises separation between subgroups, maximised when values cluster at the extremes
+- **CV**: Focuses on disparity, maximised when values are skewed towards the lower end of the distribution
+- **Blau's Index**: Captures categorical variety (depends on binning choice)
+- **CEI**: Combines range coverage with evenness of distribution
+- **Rao's Index**: Weighs differences between categories by their distances
+
+See `vignette("metrics_comparison")` for detailed comparisons and guidance.
+
+## Key Features
+
+- Consistent interface across all metrics
+- Support for grouped calculations
+- Flexible handling of missing values
+- Optional data frame output format
+- Binning options for variety-based metrics
+
+## References
+
+Harrison, D. A., & Klein, K. J. (2007). What's the difference? Diversity constructs as separation, variety, or disparity in organizations. *Academy of Management Review, 32*(4), 1199-1228.
+
+## License
+
+MIT License

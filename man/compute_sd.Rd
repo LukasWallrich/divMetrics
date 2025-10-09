@@ -4,7 +4,7 @@
 \alias{compute_sd}
 \title{Compute Standard Deviation (SD)}
 \usage{
-compute_sd(x, group = NULL, na.rm = FALSE)
+compute_sd(x, group = NULL, na.rm = FALSE, return_df = FALSE)
 }
 \arguments{
 \item{x}{Numeric vector.}
@@ -12,9 +12,11 @@ compute_sd(x, group = NULL, na.rm = FALSE)
 \item{group}{Optional grouping variable of the same length as x.}
 
 \item{na.rm}{Logical. If TRUE, NA values are removed.}
+
+\item{return_df}{Logical. If TRUE, returns a dataframe with group, group_members and index_value.}
 }
 \value{
-A single SD value if group is NULL, or a named numeric vector with one value per group if group is provided.
+A single SD value if group is NULL, or a named numeric vector with one value per group if group is provided (or a data frame if return_df is TRUE).
 }
 \description{
 Computes the standard deviation for a numeric vector, optionally within groups.

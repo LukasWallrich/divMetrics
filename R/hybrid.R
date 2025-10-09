@@ -5,20 +5,23 @@
 #' based on the pairwise differences between bin midpoints weighted by the bin proportions.
 #'
 #' @param x Numeric vector.
-#' @param group Optional grouping variable of the same length as x.
+#' @param group Optional grouping variable of the same length as x. Will be converted to a factor if not already.
 #' @param bin_width Positive numeric value specifying bin width.
 #' @param bins Optional numeric vector of bin boundaries. Values are assigned to bins using left-inclusive, right-exclusive intervals (i.e., [a, b)).
 #' @param na.rm Logical. If TRUE, NA values are removed.
 #' @param verbose Logical. If TRUE, prints additional messages.
+#' @param return_df Logical. If TRUE, returns a dataframe with group, group_members and index_value.
 #'
-#' @return A single Rao's Index value if group is NULL, or a named numeric vector with one value per group if group is provided.
+#' @return A single Rao's Index value if group is NULL, or a named numeric vector with one value per group if group is provided (or a data frame if return_df is TRUE).
 #' @export
-compute_Rao <- function(x, group = NULL, bin_width = NULL, bins = NULL, na.rm = FALSE, verbose = FALSE) {
+compute_Rao <- function(x, group = NULL, bin_width = NULL, bins = NULL, na.rm = FALSE, verbose = FALSE, return_df = FALSE) {
   if (!is.numeric(x)) stop("`x` must be a numeric vector.")
 
   na_removed <- remove_na(x, group = group, na.rm = na.rm)
   x <- na_removed$x
   group <- na_removed$group
+
+  if (!is.factor(group) && !is.null(group)) group <- factor(group, levels = unique(group))
 
   bin_details <- create_bins(x, bin_width = bin_width, bins = bins, return_midpoints = TRUE)
   breaks <- bin_details$breaks
@@ -42,9 +45,9 @@ compute_Rao <- function(x, group = NULL, bin_width = NULL, bins = NULL, na.rm = 
       tidyr::complete(bin = seq_along(bin_midpoints), fill = list(n = 0)) %>%
       dplyr::pull(n)
     observed_bins <- which(bin_counts > 0)
-    compute_group_rao(bin_counts[observed_bins], observed_bins)
+    res <- compute_group_rao(bin_counts[observed_bins], observed_bins)
   } else {
-    binned_data %>%
+    res <- binned_data %>%
       dplyr::group_by(group) %>%
       dplyr::count(bin) %>%
       tidyr::complete(bin = seq_along(bin_midpoints), fill = list(n = 0)) %>%
@@ -53,6 +56,13 @@ compute_Rao <- function(x, group = NULL, bin_width = NULL, bins = NULL, na.rm = 
         compute_group_rao(n[observed_bins], observed_bins)
       }, .groups = "drop") %>%
       tibble::deframe()
+  }
+
+  if (return_df) {
+    group_members <- report_teams(x, group)
+    tibble::tibble(group = names(res), group_members = group_members, index_value = res)
+  } else {
+    res
   }
 }
 
@@ -70,12 +80,17 @@ compute_Rao <- function(x, group = NULL, bin_width = NULL, bins = NULL, na.rm = 
 #' @param range Numeric vector of length 2 specifying the theoretical min and max; defaults to the observed range.
 #' @param na.rm Logical. If TRUE, NA values are removed.
 #' @param return Character: "CEI" (default), "S", or "E".
+#' @param verbose Logical. If TRUE, prints the range used.
+#' @param return_df Logical. If TRUE, returns a dataframe with group, group_members and index_value.
 #'
-#' @return A single value if group is NULL, or a named numeric vector with one value per group if group is provided.
+#' @return A named numeric vector with one value per group if group is provided (or a single value), unless return_df is `TRUE`.
 #' @export
 
-compute_CEI <- function(x, group = NULL, range = NULL, na.rm = FALSE, return = "CEI") {
+compute_CEI <- function(x, group = NULL, range = NULL, na.rm = FALSE, return = "CEI", verbose = FALSE, return_df = FALSE) {
   if (!is.numeric(x)) stop("`x` must be a numeric vector.")
+  if (!is.null(group) && length(x) != length(group)) {
+    stop("`x` and `group` must have the same length.")
+  }
 
   if (!na.rm && any(is.na(x))) stop("`x` contains missing values. Set na.rm = TRUE to ignore them.")
   if (na.rm && any(is.na(x))) {
@@ -85,9 +100,15 @@ compute_CEI <- function(x, group = NULL, range = NULL, na.rm = FALSE, return = "
     if (!is.null(group)) group <- group[keep]
   }
 
+  if (!is.factor(group) && !is.null(group)) group <- factor(group, levels = unique(group))
+
   if (is.null(range)) {
     range <- range(x, na.rm = TRUE)
-    message("Using observed range: c(", paste(range, collapse = ", "), ")")
+    if (verbose) {
+      message("Using observed range: c(", paste(range, collapse = ", "), ")")
+    }
+  } else if (verbose) {
+    message("Using specified range: c(", paste(range, collapse = ", "), ")")
   }
   if (length(range) != 2 || range[1] >= range[2])
     stop("`range` must be a numeric vector of length 2 with min < max.")
@@ -120,71 +141,17 @@ compute_CEI <- function(x, group = NULL, range = NULL, na.rm = FALSE, return = "
   }
 
   # Return requested component
-  unlist(switch(return,
+  res <- unlist(switch(return,
                 "CEI" = res$CEI %>% setNames(res$group),
                 "C" = res$C %>% setNames(res$group),
                 "E" = res$E %>% setNames(res$group),
                 stop("Invalid return value. Use 'CEI', 'C', or 'E'.")))
+
+  if (return_df) {
+    group_members <- report_teams(x, group)
+    tibble::tibble(group = names(res), group_members = group_members, index_value = res)
+  } else {
+    res
+  }
+
 }
-
-
-#' #' Compute the Even Spread Index (ESI)
-#' #'
-#' #' Computes the Even Spread Index (ESI) for a numeric vector. When a grouping variable is provided,
-#' #' the index is computed within each group. The `range` parameter can be "observed" (to use the observed
-#' #' min and max, but only when multiple groups are present) or a numeric vector of length 2 specifying
-#' #' the theoretical minimum and maximum. When no grouping variable is provided, `range` must be numeric.
-#' #'
-#' #' @param x Numeric vector.
-#' #' @param group Optional grouping variable of the same length as x. Required if range = "observed".
-#' #' @param range Either "observed" or a numeric vector of length 2 with min < max.
-#' #' @param na.rm Logical. If TRUE, NA values are removed.
-#' #'
-#' #' @return A single ESI value if group is NULL, or a numeric vector (one per group) if group is provided.
-#' #' @export
-#' compute_ESI <- function(x, group = NULL, range = "observed", na.rm = FALSE) {
-#'   if (!is.numeric(x)) stop("`x` must be a numeric vector.")
-#'
-#'   if (!na.rm && any(is.na(x))) stop("`x` contains missing values. Set na.rm = TRUE to ignore them.")
-#'   if (na.rm && any(is.na(x))) {
-#'     keep <- !is.na(x)
-#'     warning(sum(!keep), " missing values were removed.")
-#'     x <- x[keep]
-#'     if (!is.null(group)) group <- group[keep]
-#'   }
-#'
-#'   if (is.character(range)) {
-#'     if (range != "observed") stop("If `range` is a character, it must be 'observed'.")
-#'     if (is.null(group)) {
-#'       stop("When group is NULL, `range` must be a numeric vector; 'observed' range requires multiple groups.")
-#'     }
-#'     range_min <- min(x, na.rm = TRUE)
-#'     range_max <- max(x, na.rm = TRUE)
-#'   } else if (is.numeric(range)) {
-#'     if (length(range) != 2 || range[1] >= range[2])
-#'       stop("`range` must be a numeric vector of length 2 with min < max.")
-#'     range_min <- range[1]
-#'     range_max <- range[2]
-#'   } else {
-#'     stop("`range` must be either 'observed' or a numeric vector of length 2.")
-#'   }
-#'
-#'   compute_group_esi <- function(values, range_min, range_max) {
-#'     if (length(values) < 2) return(0)
-#'     values <- sort(values)
-#'     if (range_min == range_max) return(0)
-#'     ideal_spread <- seq(range_min, range_max, length.out = length(values))
-#'     asd <- mean(abs(values - ideal_spread))
-#'     max_asd <- mean(abs(range_min - ideal_spread))
-#'     1 - (asd + 1) / (max_asd + 1)
-#'   }
-#'
-#'   if (is.null(group)) {
-#'     compute_group_esi(x, range_min, range_max)
-#'   } else {
-#'     tibble::tibble(x = x, group = group) %>%
-#'       dplyr::group_by(group) %>%
-#'       dplyr::summarise(ESI = compute_group_esi(x, range_min, range_max), .groups = "drop") %>%
-#'       dplyr::pull(ESI)
-#'   }
-#' }

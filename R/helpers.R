@@ -28,6 +28,9 @@ create_bins <- function(x, bin_width = NULL, bins = NULL, return_midpoints = FAL
 
 # Internal helper for consistent NA removal.
 remove_na <- function(x, group = NULL, na.rm = FALSE) {
+  if (!is.null(group) && length(x) != length(group)) {
+    stop("`x` and `group` must have the same length.")
+  }
   if (!na.rm && any(is.na(x)))
     stop("`x` contains missing values. Set na.rm = TRUE to ignore them.")
   if (na.rm && any(is.na(x))) {
@@ -37,4 +40,31 @@ remove_na <- function(x, group = NULL, na.rm = FALSE) {
     if (!is.null(group)) group <- group[keep]
   }
   list(x = x, group = group)
+}
+
+#' Report Teams
+#'
+#' Combines attribute values by team, maintaining the order of first appearance.
+#'
+#' @param attribute A vector of attribute values.
+#' @param team A vector indicating the team for each attribute.
+#'
+#' @return A named character vector where each element is a comma-separated string of attribute values for a team.
+#' The names correspond to the teams.
+#'
+#' @examples
+#' report_teams(c("A", "B", "C", "A", "A", "A"), c(1,1,1,2,2,2))
+#' report_teams(c(1,2,3,4), c(2,2,1,1))
+
+report_teams <- function(attribute, team) {
+  if (length(attribute) != length(team)) {
+    stop("`attribute` and `team` must have the same length.")
+  }
+
+  if (!is.factor(team))  {
+   ord <- unique(team)
+  } else {
+    ord <- levels(team)
+  }
+  setNames(sapply(ord, function(t) paste(attribute[team == t], collapse = ", ")), ord)
 }

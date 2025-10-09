@@ -4,7 +4,15 @@
 \alias{compute_CEI}
 \title{Compute the Coverage and Evenness Index (CEI) or its Components}
 \usage{
-compute_CEI(x, group = NULL, range = NULL, na.rm = FALSE, return = "CEI")
+compute_CEI(
+  x,
+  group = NULL,
+  range = NULL,
+  na.rm = FALSE,
+  return = "CEI",
+  verbose = FALSE,
+  return_df = FALSE
+)
 }
 \arguments{
 \item{x}{Numeric vector.}
@@ -16,9 +24,13 @@ compute_CEI(x, group = NULL, range = NULL, na.rm = FALSE, return = "CEI")
 \item{na.rm}{Logical. If TRUE, NA values are removed.}
 
 \item{return}{Character: "CEI" (default), "S", or "E".}
+
+\item{verbose}{Logical. If TRUE, prints the range used.}
+
+\item{return_df}{Logical. If TRUE, returns a dataframe with group, group_members and index_value.}
 }
 \value{
-A single value if group is NULL, or a named numeric vector with one value per group if group is provided.
+A named numeric vector with one value per group if group is provided (or a single value), unless return_df is \code{TRUE}.
 }
 \description{
 Computes the Coverage and Evenness Index (CEI), or its components: Coverage (Coverage) and

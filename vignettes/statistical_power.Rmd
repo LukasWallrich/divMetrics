@@ -90,8 +90,10 @@ generate_team <- function(size, n_teams, alpha = 2, beta = 5) {
 
 #--- A helper function to run one "condition" (factorial cell) ---
 # Simulation function that returns detailed team scores
-run_simulation <- function(team_size, smooth_window, n_teams = 250, n_landscapes = 250) {
-  teams <- generate_team(team_size, n_teams)
+run_simulation <- function(team_size, smooth_window, n_teams = 250, n_landscapes = 250, teams = NULL) {
+    if (is.null(teams)) {
+    teams <- generate_team(team_size, total_teams)
+  }
   
   # Calculate diversity metrics per team
   team_data <- teams %>% 
@@ -147,34 +149,44 @@ run_simulation <- function(team_size, smooth_window, n_teams = 250, n_landscapes
 ```{r}
 set.seed(1234)
 # Simulation parameters
-total_teams <- 250
+total_teams <- 1000
 total_landscapes <- 250
 chunks <- 25
 
-# Define factorial conditions and replications
+# Pre-generate teams for each condition combination (teams are generated once per condition)
+pre_generated_teams <- expand.grid(
+  team_size = c(5, 10),
+  smooth_window = c(3, 5)
+) %>%
+  as_tibble() %>%
+  mutate(teams = purrr::map(team_size, ~ generate_team(.x, total_teams)))
+
+# Define factorial conditions and replications (chunks)
 conditions <- expand.grid(
   team_size = c(5, 10),
   smooth_window = c(3, 5)
 ) %>%
   slice(rep(1:n(), each = chunks)) %>%
-  mutate(chunk = rep(1:chunks, times = nrow(expand.grid(team_size = c(5, 10), smooth_window = c(3, 5)))))
+  mutate(chunk = rep(1:chunks, times = nrow(expand.grid(team_size = c(5, 10), smooth_window = c(3, 5))))) %>%
+  left_join(pre_generated_teams, by = c("team_size", "smooth_window"))
 
-# Run simulations in parallel, returning detailed team scores
+# Run simulations in parallel over conditions, passing pre-generated teams into run_simulation
 results <- with_progress({
-  p <- progressor(steps = nrow(conditions))
-  future_pmap_dfr(
+  p <- progressr::progressor(steps = nrow(conditions))
+  furrr::future_pmap_dfr(
     conditions,
-    function(team_size, smooth_window, chunk) {
+    function(team_size, smooth_window, chunk, teams) {
       sim_data <- run_simulation(team_size, smooth_window, 
                                  n_teams = total_teams, 
-                                 n_landscapes = ceiling(total_landscapes/chunks))
+                                 n_landscapes = ceiling(total_landscapes/chunks),
+                                 teams = teams)
       p()  # update progress after each simulation run
       sim_data %>% 
-        mutate(team_size = team_size,
-               smooth_window = smooth_window,
-               chunk = chunk)
+        dplyr::mutate(team_size = team_size,
+                      smooth_window = smooth_window,
+                      chunk = chunk)
     },
-    .options = furrr_options(seed = TRUE)
+    .options = furrr::furrr_options(seed = TRUE)
   )
 })
 

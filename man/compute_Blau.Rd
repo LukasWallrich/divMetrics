@@ -10,7 +10,8 @@ compute_Blau(
   bin_width = NULL,
   bins = NULL,
   na.rm = FALSE,
-  verbose = FALSE
+  verbose = FALSE,
+  return_df = FALSE
 )
 }
 \arguments{
@@ -23,9 +24,11 @@ compute_Blau(
 \item{bins}{Optional numeric vector of bin boundaries. Values are assigned to bins using left-inclusive, right-exclusive intervals (i.e., first interval [a, b) does not include b).#' @param na.rm Logical. If TRUE, NA values are removed.}
 
 \item{verbose}{Logical. If TRUE, prints the bin breaks.}
+
+\item{return_df}{Logical. If TRUE, returns a dataframe with group, group_members and index_value.}
 }
 \value{
-A single Blau's Index value if group is NULL, or a named numeric vector with one value per group if group is provided.
+A named numeric vector with one value per group if group is provided (or a single value), unless return_df is \code{TRUE}.
 }
 \description{
 Computes Blau's Index for a numeric vector, optionally within groups. Continuous values

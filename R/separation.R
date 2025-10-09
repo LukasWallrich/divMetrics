@@ -7,32 +7,43 @@
 #' @param x Numeric vector.
 #' @param group Optional grouping variable of the same length as x.
 #' @param na.rm Logical. If TRUE, NA values are removed.
+#' @param warn_zero_mean Logical. If TRUE (default), warns when mean is zero (resulting in NA).
+#' @param return_df Logical. If TRUE, returns a dataframe with group, group_members and index_value.
 #'
-#' @return A single CV value if group is NULL, or a named numeric vector with one value per group if group is provided.
+#' @return A single CV value if group is NULL, or a named numeric vector with one value per group if group is provided (or a data frame if return_df is TRUE). Returns NA when mean is zero.
 #' @export
-compute_cv <- function(x, group = NULL, na.rm = FALSE) {
+compute_cv <- function(x, group = NULL, na.rm = FALSE, warn_zero_mean = TRUE, return_df = FALSE) {
   if (!is.numeric(x)) stop("`x` must be a numeric vector.")
 
-  if (!na.rm && any(is.na(x))) stop("`x` contains missing values. Set na.rm = TRUE to ignore them.")
-  if (na.rm && any(is.na(x))) {
-    keep <- !is.na(x)
-    warning(sum(!keep), " missing values were removed.")
-    x <- x[keep]
-    if (!is.null(group)) group <- group[keep]
-  }
+  na_removed <- remove_na(x, group = group, na.rm = na.rm)
+  x <- na_removed$x
+  group <- na_removed$group
+
+  if (!is.factor(group) && !is.null(group)) group <- factor(group, levels = unique(group))
 
   compute_group_cv <- function(values) {
-    if (mean(values) == 0) return(NA)
-    stats::sd(values) / mean(values)
+    m <- mean(values)
+    if (m == 0) {
+      if (warn_zero_mean) warning("Mean is zero; CV is undefined. Returning NA.")
+      return(NA)
+    }
+    stats::sd(values) / m
   }
 
   if (is.null(group)) {
-    compute_group_cv(x)
+    res <- compute_group_cv(x)
   } else {
-    tibble::tibble(x = x, group = group) %>%
+    res <- tibble::tibble(x = x, group = group) %>%
       dplyr::group_by(group) %>%
       dplyr::summarise(CV = compute_group_cv(x), .groups = "drop") %>%
       tibble::deframe()
+  }
+
+  if (return_df) {
+    group_members <- report_teams(x, group)
+    tibble::tibble(group = names(res), group_members = group_members, index_value = res)
+  } else {
+    res
   }
 }
 
@@ -43,30 +54,32 @@ compute_cv <- function(x, group = NULL, na.rm = FALSE) {
 #' @param x Numeric vector.
 #' @param group Optional grouping variable of the same length as x.
 #' @param na.rm Logical. If TRUE, NA values are removed.
+#' @param return_df Logical. If TRUE, returns a dataframe with group, group_members and index_value.
 #'
-#' @return A single SD value if group is NULL, or a named numeric vector with one value per group if group is provided.
+#' @return A single SD value if group is NULL, or a named numeric vector with one value per group if group is provided (or a data frame if return_df is TRUE).
 #' @export
-compute_sd <- function(x, group = NULL, na.rm = FALSE) {
+compute_sd <- function(x, group = NULL, na.rm = FALSE, return_df = FALSE) {
   if (!is.numeric(x)) stop("`x` must be a numeric vector.")
 
-  if (!na.rm && any(is.na(x))) stop("`x` contains missing values. Set na.rm = TRUE to ignore them.")
-  if (na.rm && any(is.na(x))) {
-    keep <- !is.na(x)
-    warning(sum(!keep), " missing values were removed.")
-    x <- x[keep]
-    if (!is.null(group)) group <- group[keep]
-  }
+  na_removed <- remove_na(x, group = group, na.rm = na.rm)
+  x <- na_removed$x
+  group <- na_removed$group
 
-  compute_group_sd <- function(values) {
-    stats::sd(values)
-  }
+  if (!is.factor(group) && !is.null(group)) group <- factor(group, levels = unique(group))
 
   if (is.null(group)) {
-    compute_group_sd(x)
+    res <- stats::sd(x)
   } else {
-    tibble::tibble(x = x, group = group) %>%
+    res <- tibble::tibble(x = x, group = group) %>%
       dplyr::group_by(group) %>%
-      dplyr::summarise(SD = compute_group_sd(x), .groups = "drop") %>%
+      dplyr::summarise(SD = stats::sd(x), .groups = "drop") %>%
       tibble::deframe()
+  }
+
+  if (return_df) {
+    group_members <- report_teams(x, group)
+    tibble::tibble(group = names(res), group_members = group_members, index_value = res)
+  } else {
+    res
   }
 }

@@ -4,7 +4,13 @@
 \alias{compute_cv}
 \title{Compute Coefficient of Variation (CV)}
 \usage{
-compute_cv(x, group = NULL, na.rm = FALSE)
+compute_cv(
+  x,
+  group = NULL,
+  na.rm = FALSE,
+  warn_zero_mean = TRUE,
+  return_df = FALSE
+)
 }
 \arguments{
 \item{x}{Numeric vector.}
@@ -12,9 +18,13 @@ compute_cv(x, group = NULL, na.rm = FALSE)
 \item{group}{Optional grouping variable of the same length as x.}
 
 \item{na.rm}{Logical. If TRUE, NA values are removed.}
+
+\item{warn_zero_mean}{Logical. If TRUE (default), warns when mean is zero (resulting in NA).}
+
+\item{return_df}{Logical. If TRUE, returns a dataframe with group, group_members and index_value.}
 }
 \value{
-A single CV value if group is NULL, or a named numeric vector with one value per group if group is provided.
+A single CV value if group is NULL, or a named numeric vector with one value per group if group is provided (or a data frame if return_df is TRUE). Returns NA when mean is zero.
 }
 \description{
 Computes the coefficient of variation (CV) for a numeric vector, optionally within groups.

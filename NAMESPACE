@@ -3,5 +3,7 @@
 export(compute_Blau)
 export(compute_CEI)
 export(compute_Rao)
+export(compute_all_metrics)
 export(compute_cv)
 export(compute_sd)
+export(plot_metric_comparison)
