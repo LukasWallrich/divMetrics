@@ -436,7 +436,7 @@ outliers <- div_scores %>%
 
 ### Comparing the Coefficient of Variation and CEI
 
-```{r divergence_blau5, fig.width=10, fig.height=6}
+```{r divergence_cv, fig.width=10, fig.height=6}
 p <- div_scores %>% 
   filter(team_size == 5) %>%
   ggplot(aes(x = CEI, y = CV)) +
