@@ -23,7 +23,7 @@ library(GGally)
 library(viridis)  # For color scales
 library(ggrepel) # For text annotation in chart
 library(ggtext)
-
+library(tidyr)
 ```
 
 
