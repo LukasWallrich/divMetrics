@@ -1,60 +1,70 @@
-#' Compute Rao's Quadratic Entropy (Rao-Simpson Index)
+## Rao (distance-matrix only)
+#' Compute Rao's Quadratic Entropy (distance-matrix form)
 #'
-#' Computes Rao's Quadratic Entropy for a numeric vector, optionally within groups.
-#' Continuous data are discretized into bins (using bin_width or bins), and the index is calculated
-#' based on the pairwise differences between bin midpoints weighted by the bin proportions.
+#' Computes Rao's Quadratic Entropy for a categorical vector using a provided
+#' dissimilarity matrix D. For each group, the category proportions p are
+#' computed and Q = p' D p is returned.
 #'
-#' @param x Numeric vector.
-#' @param group Optional grouping variable of the same length as x. Will be converted to a factor if not already.
-#' @param bin_width Positive numeric value specifying bin width.
-#' @param bins Optional numeric vector of bin boundaries. Values are assigned to bins using left-inclusive, right-exclusive intervals (i.e., [a, b)).
+#' This variant does not accept binning for continuous data. For continuous
+#' attributes, use `compute_GMD()` instead.
+#'
+#' @param x Vector of categories (character or factor). Values must be present
+#'   in the row/column names of `D`.
+#' @param group Optional grouping variable of the same length as x. Will be
+#'   converted to a factor if not already.
+#' @param D A symmetric distance/dissimilarity matrix (or a `dist` object)
+#'   whose row/column names define the category universe.
 #' @param na.rm Logical. If TRUE, NA values are removed.
-#' @param verbose Logical. If TRUE, prints additional messages.
-#' @param return_df Logical. If TRUE, returns a dataframe with group, group_members and index_value.
+#' @param return_df Logical. If TRUE, returns a dataframe with group,
+#'   group_members and index_value.
 #'
-#' @return A single Rao's Index value if group is NULL, or a named numeric vector with one value per group if group is provided (or a data frame if return_df is TRUE).
+#' @return A single Rao's Index value if group is NULL, or a named numeric
+#'   vector with one value per group if group is provided (or a data frame if
+#'   return_df is TRUE).
 #' @export
-compute_Rao <- function(x, group = NULL, bin_width = NULL, bins = NULL, na.rm = FALSE, verbose = FALSE, return_df = FALSE) {
-  if (!is.numeric(x)) stop("`x` must be a numeric vector.")
+compute_Rao <- function(x, group = NULL, D, na.rm = FALSE, return_df = FALSE) {
+  if (missing(D)) stop("`D` (distance matrix) must be provided.")
 
+  # Accept dist or matrix
+  if (inherits(D, "dist")) {
+    D <- as.matrix(D)
+  }
+  if (!is.matrix(D)) stop("`D` must be a matrix or a dist object.")
+  if (is.null(rownames(D)) || is.null(colnames(D)))
+    stop("`D` must have row and column names.")
+  if (!all(rownames(D) == colnames(D)))
+    stop("Row and column names of `D` must match and be in the same order.")
+  if (!isSymmetric(D, tol = 1e-10))
+    stop("`D` must be symmetric.")
+
+  # x can be any atomic vector interpreted as categories
   na_removed <- remove_na(x, group = group, na.rm = na.rm)
   x <- na_removed$x
   group <- na_removed$group
 
   if (!is.factor(group) && !is.null(group)) group <- factor(group, levels = unique(group))
 
-  bin_details <- create_bins(x, bin_width = bin_width, bins = bins, return_midpoints = TRUE)
-  breaks <- bin_details$breaks
-  bin_midpoints <- bin_details$midpoints
+  cats <- rownames(D)
+  x_chr <- as.character(x)
+  if (!all(unique(x_chr) %in% cats)) {
+    missing_cats <- setdiff(unique(x_chr), cats)
+    stop("The following categories in `x` are not present in `D`: ", paste(missing_cats, collapse = ", "))
+  }
 
-  binned_data <- tibble::tibble(x = x, group = group) %>%
-    dplyr::mutate(bin = cut(x, breaks = breaks, include.lowest = TRUE, right = FALSE, labels = FALSE))
-
-  compute_group_rao <- function(bin_counts, observed_bins) {
-    total <- sum(bin_counts)
-    if (total == 0) return(0)
-    prop <- bin_counts / total
-    obs_midpoints <- bin_midpoints[observed_bins]
-    obs_dist_matrix <- as.matrix(stats::dist(obs_midpoints))
-    sum(outer(prop, prop) * obs_dist_matrix)
+  compute_group_rao <- function(values_chr) {
+    n <- length(values_chr)
+    if (n == 0) return(0)
+    counts <- table(factor(values_chr, levels = cats))
+    p <- as.numeric(counts) / sum(counts)
+    as.numeric(t(p) %*% D %*% p)
   }
 
   if (is.null(group)) {
-    bin_counts <- binned_data %>%
-      dplyr::count(bin) %>%
-      tidyr::complete(bin = seq_along(bin_midpoints), fill = list(n = 0)) %>%
-      dplyr::pull(n)
-    observed_bins <- which(bin_counts > 0)
-    res <- compute_group_rao(bin_counts[observed_bins], observed_bins)
+    res <- compute_group_rao(x_chr)
   } else {
-    res <- binned_data %>%
+    res <- tibble::tibble(x = x_chr, group = group) %>%
       dplyr::group_by(group) %>%
-      dplyr::count(bin) %>%
-      tidyr::complete(bin = seq_along(bin_midpoints), fill = list(n = 0)) %>%
-      dplyr::summarise(Rao_Index = {
-        observed_bins <- which(n > 0)
-        compute_group_rao(n[observed_bins], observed_bins)
-      }, .groups = "drop") %>%
+      dplyr::summarise(Rao_Index = compute_group_rao(x), .groups = "drop") %>%
       tibble::deframe()
   }
 
@@ -62,11 +72,11 @@ compute_Rao <- function(x, group = NULL, bin_width = NULL, bins = NULL, na.rm = 
     if (is.null(group)) {
       tibble::tibble(
         group = NA_character_,
-        group_members = paste(x, collapse = ", "),
+        group_members = paste(x_chr, collapse = ", "),
         index_value = res
       )
     } else {
-      group_members <- report_teams(x, group)
+      group_members <- report_teams(x_chr, group)
       tibble::tibble(
         group = names(res),
         group_members = unname(group_members[names(res)]),
@@ -91,7 +101,7 @@ compute_Rao <- function(x, group = NULL, bin_width = NULL, bins = NULL, na.rm = 
 #' @param group Optional grouping variable of the same length as x.
 #' @param range Numeric vector of length 2 specifying the theoretical min and max; defaults to the observed range.
 #' @param na.rm Logical. If TRUE, NA values are removed.
-#' @param return Character: "CEI" (default), "C", or "E". The deprecated alias "S" maps to "C".
+#' @param return Character: "CEI" (default), "C", or "E".
 #' @param verbose Logical. If TRUE, prints the range used.
 #' @param return_df Logical. If TRUE, returns a dataframe with group, group_members and index_value.
 #'
@@ -144,10 +154,6 @@ compute_CEI <- function(x, group = NULL, range = NULL, na.rm = FALSE, return = "
   }
 
   return <- toupper(return)
-  if (return == "S") {
-    warning("`return = \"S\"` is deprecated; use \"C\" instead.", call. = FALSE)
-    return <- "C"
-  }
   if (!return %in% c("CEI", "C", "E")) {
     stop("Invalid return value. Use 'CEI', 'C', or 'E'.")
   }

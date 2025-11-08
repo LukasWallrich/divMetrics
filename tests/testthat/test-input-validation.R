@@ -2,36 +2,74 @@ library(divMetrics)
 
 # ---- Tests for input validation across all functions ----
 
-testthat::test_that("All functions reject non-numeric x", {
-  testthat::expect_error(compute_cv(c("a", "b", "c")), "`x` must be a numeric vector")
-  testthat::expect_error(compute_sd(c("a", "b", "c")), "`x` must be a numeric vector")
-  testthat::expect_error(compute_Blau(c("a", "b", "c"), bin_width = 1), "`x` must be a numeric vector")
-  testthat::expect_error(compute_Rao(c("a", "b", "c"), bin_width = 1), "`x` must be a numeric vector")
-  testthat::expect_error(compute_CEI(c("a", "b", "c"), range = c(0, 10)), "`x` must be a numeric vector")
+testthat::test_that("Most functions reject non-numeric x (Rao accepts categorical)", {
+  testthat::expect_error(compute_cv(c("a", "b", "c")),
+                         "`x` must be a numeric vector")
+  testthat::expect_error(compute_sd(c("a", "b", "c")),
+                         "`x` must be a numeric vector")
+  testthat::expect_error(compute_Blau(c("a", "b", "c"), bin_width = 1),
+                         "`x` must be a numeric vector")
+  testthat::expect_error(compute_CEI(c("a", "b", "c"), range = c(0, 10)),
+                         "`x` must be a numeric vector")
+  testthat::expect_error(compute_GMD(c("a", "b", "c")),
+                         "`x` must be a numeric vector")
 })
 
 testthat::test_that("All functions reject mismatched x and group lengths", {
-  testthat::expect_error(compute_cv(c(1, 2, 3), group = c(1, 2)), "`x` and `group` must have the same length")
-  testthat::expect_error(compute_sd(c(1, 2, 3), group = c(1, 2)), "`x` and `group` must have the same length")
-  testthat::expect_error(compute_Blau(c(1, 2, 3), group = c(1, 2), bin_width = 1), "`x` and `group` must have the same length")
-  testthat::expect_error(compute_Rao(c(1, 2, 3), group = c(1, 2), bin_width = 1), "`x` and `group` must have the same length")
-  testthat::expect_error(compute_CEI(c(1, 2, 3), group = c(1, 2), range = c(0, 10)), "`x` and `group` must have the same length")
+  testthat::expect_error(compute_cv(c(1, 2, 3), group = c(1, 2)),
+                         "`x` and `group` must have the same length")
+  testthat::expect_error(compute_sd(c(1, 2, 3), group = c(1, 2)),
+                         "`x` and `group` must have the same length")
+  testthat::expect_error(compute_Blau(c(1, 2, 3), group = c(1, 2),
+                                      bin_width = 1),
+                         "`x` and `group` must have the same length")
+  D <- matrix(c(0,1,1,0), nrow = 2, byrow = TRUE,
+              dimnames = list(c("a","b"), c("a","b")))
+  testthat::expect_error(compute_Rao(c("a", "b", "a"), group = c(1, 2), D = D),
+                         "`x` and `group` must have the same length")
+  testthat::expect_error(compute_CEI(c(1, 2, 3), group = c(1, 2),
+                                     range = c(0, 10)),
+                         "`x` and `group` must have the same length")
+  testthat::expect_error(compute_GMD(c(1, 2, 3), group = c(1, 2)),
+                         "`x` and `group` must have the same length")
 })
 
 testthat::test_that("All functions error on NA without na.rm", {
-  testthat::expect_error(compute_cv(c(1, NA, 3), na.rm = FALSE), "contains missing values")
-  testthat::expect_error(compute_sd(c(1, NA, 3), na.rm = FALSE), "contains missing values")
-  testthat::expect_error(compute_Blau(c(1, NA, 3), bin_width = 1, na.rm = FALSE), "contains missing values")
-  testthat::expect_error(compute_Rao(c(1, NA, 3), bin_width = 1, na.rm = FALSE), "contains missing values")
-  testthat::expect_error(compute_CEI(c(1, NA, 3), range = c(0, 10), na.rm = FALSE), "contains missing values")
+  D <- matrix(c(0,1,1,0), nrow = 2, byrow = TRUE,
+              dimnames = list(c("a","b"), c("a","b")))
+  testthat::expect_error(compute_cv(c(1, NA, 3), na.rm = FALSE),
+                         "contains missing values")
+  testthat::expect_error(compute_sd(c(1, NA, 3), na.rm = FALSE),
+                         "contains missing values")
+  testthat::expect_error(compute_Blau(c(1, NA, 3), bin_width = 1,
+                                      na.rm = FALSE),
+                         "contains missing values")
+  testthat::expect_error(compute_Rao(c("a", NA, "b"), D = D, na.rm = FALSE),
+                         "contains missing values")
+  testthat::expect_error(compute_CEI(c(1, NA, 3), range = c(0, 10),
+                                     na.rm = FALSE),
+                         "contains missing values")
+  testthat::expect_error(compute_GMD(c(1, NA, 3), na.rm = FALSE),
+                         "contains missing values")
 })
 
 testthat::test_that("All functions warn and remove NA with na.rm = TRUE", {
-  testthat::expect_warning(compute_cv(c(1, NA, 3), na.rm = TRUE), "missing values were removed")
-  testthat::expect_warning(compute_sd(c(1, NA, 3), na.rm = TRUE), "missing values were removed")
-  testthat::expect_warning(compute_Blau(c(1, NA, 3), bin_width = 1, na.rm = TRUE), "missing values were removed")
-  testthat::expect_warning(compute_Rao(c(1, NA, 3), bin_width = 1, na.rm = TRUE), "missing values were removed")
-  testthat::expect_warning(compute_CEI(c(1, NA, 3), range = c(0, 10), na.rm = TRUE), "missing values were removed")
+  D <- matrix(c(0,1,1,0), nrow = 2, byrow = TRUE,
+              dimnames = list(c("a","b"), c("a","b")))
+  testthat::expect_warning(compute_cv(c(1, NA, 3), na.rm = TRUE),
+                           "missing values were removed")
+  testthat::expect_warning(compute_sd(c(1, NA, 3), na.rm = TRUE),
+                           "missing values were removed")
+  testthat::expect_warning(compute_Blau(c(1, NA, 3), bin_width = 1,
+                                        na.rm = TRUE),
+                           "missing values were removed")
+  testthat::expect_warning(compute_Rao(c("a", NA, "b"), D = D, na.rm = TRUE),
+                           "missing values were removed")
+  testthat::expect_warning(compute_CEI(c(1, NA, 3), range = c(0, 10),
+                                       na.rm = TRUE),
+                           "missing values were removed")
+  testthat::expect_warning(compute_GMD(c(1, NA, 3), na.rm = TRUE),
+                           "missing values were removed")
 })
 
 # ---- Tests for binning parameter validation ----
@@ -41,10 +79,7 @@ testthat::test_that("Binning functions reject both bin_width and bins", {
     compute_Blau(c(1, 2, 3), bin_width = 1, bins = c(0, 2, 4)),
     "Specify either bin_width or bins, not both"
   )
-  testthat::expect_error(
-    compute_Rao(c(1, 2, 3), bin_width = 1, bins = c(0, 2, 4)),
-    "Specify either bin_width or bins, not both"
-  )
+  # compute_Rao no longer uses binning; this case is not applicable
 })
 
 testthat::test_that("Binning functions require either bin_width or bins", {
@@ -52,10 +87,7 @@ testthat::test_that("Binning functions require either bin_width or bins", {
     compute_Blau(c(1, 2, 3)),
     "Either bin_width or bins must be provided"
   )
-  testthat::expect_error(
-    compute_Rao(c(1, 2, 3)),
-    "Either bin_width or bins must be provided"
-  )
+  # compute_Rao now requires a distance matrix instead of bins
 })
 
 testthat::test_that("bin_width must be positive numeric", {

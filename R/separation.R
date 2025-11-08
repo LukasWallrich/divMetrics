@@ -107,3 +107,65 @@ compute_sd <- function(x, group = NULL, na.rm = FALSE, return_df = FALSE) {
     res
   }
 }
+
+#' Compute Gini Mean Difference (GMD)
+#'
+#' Computes the Gini Mean Difference (mean pairwise absolute difference) for a
+#' numeric vector, optionally within groups. Returns values in the same units as
+#' the input (e.g., years for age). This is the continuous analogue of Rao's Q
+#' with equal weights and absolute-distance dissimilarity, differing only by the
+#' factor (n-1)/n.
+#'
+#' @param x Numeric vector.
+#' @param group Optional grouping variable of the same length as x.
+#' @param na.rm Logical. If TRUE, NA values are removed.
+#' @param return_df Logical. If TRUE, returns a dataframe with group, group_members and index_value.
+#'
+#' @return A single GMD value if group is NULL, or a named numeric vector with
+#' one value per group if group is provided (or a data frame if return_df is
+#' TRUE).
+#' @export
+compute_GMD <- function(x, group = NULL, na.rm = FALSE, return_df = FALSE) {
+  if (!is.numeric(x)) stop("`x` must be a numeric vector.")
+
+  na_removed <- remove_na(x, group = group, na.rm = na.rm)
+  x <- na_removed$x
+  group <- na_removed$group
+
+  if (!is.factor(group) && !is.null(group)) group <- factor(group, levels = unique(group))
+
+  compute_group_gmd <- function(values) {
+    n <- length(values)
+    if (n < 2) return(0)
+    # Mean of all pairwise absolute differences
+    mean(stats::dist(values, method = "manhattan"))
+  }
+
+  if (is.null(group)) {
+    res <- compute_group_gmd(x)
+  } else {
+    res <- tibble::tibble(x = x, group = group) %>%
+      dplyr::group_by(group) %>%
+      dplyr::summarise(GMD = compute_group_gmd(x), .groups = "drop") %>%
+      tibble::deframe()
+  }
+
+  if (return_df) {
+    if (is.null(group)) {
+      tibble::tibble(
+        group = NA_character_,
+        group_members = paste(x, collapse = ", "),
+        index_value = res
+      )
+    } else {
+      group_members <- report_teams(x, group)
+      tibble::tibble(
+        group = names(res),
+        group_members = unname(group_members[names(res)]),
+        index_value = unname(res)
+      )
+    }
+  } else {
+    res
+  }
+}

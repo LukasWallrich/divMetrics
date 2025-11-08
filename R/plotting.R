@@ -92,10 +92,13 @@ plot_metric_comparison <- function(data, metrics, group_var,
 #'
 #' Convenience function to compute multiple diversity metrics at once.
 #'
-#' @param x Numeric vector of values
+#' @param x Numeric vector of values (continuous attributes) or character/factor for categorical
 #' @param group Optional grouping variable
-#' @param bin_width Bin width for Blau and Rao indices (if NULL, skips these)
-#' @param bins Optional bin boundaries for Blau and Rao indices
+#' @param method Character. One of "continuous" (default) or "categorical".
+#'   When "continuous", computes CV, SD, GMD, CEI (and Blau if binning is provided).
+#'   When "categorical", not yet implemented.
+#' @param bin_width Bin width for Blau (if NULL, skips Blau)
+#' @param bins Optional bin boundaries for Blau
 #' @param range Optional range for CEI (if NULL, uses observed range)
 #' @param na.rm Logical. If TRUE, removes NA values
 #' @param return_df Logical. If TRUE, returns a data frame; if FALSE returns a list
@@ -111,21 +114,27 @@ plot_metric_comparison <- function(data, metrics, group_var,
 #' ages <- c(25, 28, 32, 45, 52, 30, 31, 32, 33, 34)
 #' teams <- c(rep("A", 5), rep("B", 5))
 #' compute_all_metrics(ages, group = teams, bin_width = 10, return_df = TRUE)
-compute_all_metrics <- function(x, group = NULL, bin_width = NULL, bins = NULL,
+compute_all_metrics <- function(x, group = NULL,
+                               method = c("continuous", "categorical"),
+                               bin_width = NULL, bins = NULL,
                                range = NULL, na.rm = FALSE, return_df = FALSE) {
 
+  method <- match.arg(method)
   results <- list()
 
-  # Separation metrics (always computed)
+  if (method == "categorical") {
+    stop("Categorical method not yet implemented.")
+  }
+
+  # For continuous attributes
   results$CV <- compute_cv(x, group = group, na.rm = na.rm)
   results$SD <- compute_sd(x, group = group, na.rm = na.rm)
+  results$GMD <- compute_GMD(x, group = group, na.rm = na.rm)
 
   # Variety metrics (require binning)
   if (!is.null(bin_width) || !is.null(bins)) {
     results$Blau <- compute_Blau(x, group = group, bin_width = bin_width,
                                  bins = bins, na.rm = na.rm)
-    results$Rao <- compute_Rao(x, group = group, bin_width = bin_width,
-                              bins = bins, na.rm = na.rm)
   }
 
   # Hybrid metric

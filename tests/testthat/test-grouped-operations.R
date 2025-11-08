@@ -45,11 +45,13 @@ testthat::test_that("compute_Blau works with groups", {
   testthat::expect_equal(unname(result["B"]), 0.5)
 })
 
-testthat::test_that("compute_Rao works with groups", {
-  x <- c(1, 1, 3, 3, 5, 5, 7, 7)
+testthat::test_that("compute_Rao works with groups (categorical + D)", {
+  x <- c("u", "u", "v", "v", "u", "v", "u", "v")
   group <- c("A", "A", "A", "A", "B", "B", "B", "B")
+  D <- matrix(c(0, 1, 1, 0), nrow = 2, byrow = TRUE,
+              dimnames = list(c("u","v"), c("u","v")))
 
-  result <- compute_Rao(x, group = group, bins = c(0, 2, 4, 6, 8))
+  result <- compute_Rao(x, group = group, D = D)
 
   testthat::expect_length(result, 2)
   testthat::expect_named(result, c("A", "B"))
@@ -65,6 +67,29 @@ testthat::test_that("compute_CEI works with groups", {
   testthat::expect_length(result, 2)
   testthat::expect_named(result, c("A", "B"))
   testthat::expect_true(all(!is.na(result)))
+})
+
+testthat::test_that("compute_GMD works with groups", {
+  x <- c(1, 2, 3, 10, 20, 30)
+  group <- c("A", "A", "A", "B", "B", "B")
+
+  result <- compute_GMD(x, group = group)
+
+  testthat::expect_length(result, 2)
+  testthat::expect_named(result, c("A", "B"))
+  testthat::expect_true(all(!is.na(result)))
+
+  # Verify values match ungrouped calculation
+  testthat::expect_equal(
+    unname(result["A"]),
+    compute_GMD(c(1, 2, 3)),
+    tolerance = 1e-6
+  )
+  testthat::expect_equal(
+    unname(result["B"]),
+    compute_GMD(c(10, 20, 30)),
+    tolerance = 1e-6
+  )
 })
 
 # ---- Tests for group ordering ----
@@ -123,11 +148,26 @@ testthat::test_that("compute_CEI return_df works with groups", {
   x <- c(20, 40, 60, 25, 45, 65)
   group <- c("A", "A", "A", "B", "B", "B")
 
-  result <- compute_CEI(x, group = group, range = c(20, 70), return_df = TRUE)
+  result <- compute_CEI(x, group = group, range = c(20, 70),
+                        return_df = TRUE)
 
   testthat::expect_s3_class(result, "tbl_df")
   testthat::expect_equal(ncol(result), 3)
-  testthat::expect_named(result, c("group", "group_members", "index_value"))
+  testthat::expect_named(result, c("group", "group_members",
+                                   "index_value"))
+  testthat::expect_equal(nrow(result), 2)
+})
+
+testthat::test_that("compute_GMD return_df works with groups", {
+  x <- c(1, 2, 3, 10, 20, 30)
+  group <- c("A", "A", "A", "B", "B", "B")
+
+  result <- compute_GMD(x, group = group, return_df = TRUE)
+
+  testthat::expect_s3_class(result, "tbl_df")
+  testthat::expect_equal(ncol(result), 3)
+  testthat::expect_named(result, c("group", "group_members",
+                                   "index_value"))
   testthat::expect_equal(nrow(result), 2)
 })
 

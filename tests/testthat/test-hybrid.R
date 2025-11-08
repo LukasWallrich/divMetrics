@@ -1,41 +1,38 @@
 library(divMetrics)
 
-# ---- Tests for compute_Rao ----
+## ---- Tests for compute_Rao (distance matrix form) ----
 
-testthat::test_that("compute_Rao computes correct value with given bins", {
-  # x = c(1, 1, 3, 3) and bins = c(0, 2, 4)
-  # Counts: 2 in each bin; proportions: 0.5 each; midpoint distance = 2.
-  # Rao = 2 * (0.25 * 2) = 1.
-  result <- compute_Rao(c(1, 1, 3, 3), bins = c(0, 2, 4), na.rm = TRUE)
+testthat::test_that("compute_Rao matches p' D p for simple case", {
+  # Categories A,B with distance 2 between them
+  D <- matrix(c(0,2,2,0), nrow = 2, byrow = TRUE,
+              dimnames = list(c("A","B"), c("A","B")))
+  x <- c("A","A","B","B")
+  # p = (0.5, 0.5); Q = 0.5*0.5*2 + 0.5*0.5*2 = 1
+  result <- compute_Rao(x, D = D, na.rm = TRUE)
   testthat::expect_equal(result, 1)
 })
 
-testthat::test_that("compute_Rao works with bin_width parameter", {
-  # Using bin_width instead of bins: for x = c(1, 1, 3, 3) with bin_width = 2
-  # Expected: same as using bins = c(0, 2, 4)
-  x <- c(1, 1, 3, 3)
-  result1 <- compute_Rao(x, bin_width = 2, na.rm = TRUE)
-  result2 <- compute_Rao(x, bins = c(0, 2, 4), na.rm = TRUE)
-  testthat::expect_equal(result1, result2)
+testthat::test_that("compute_Rao works with groups and dist objects", {
+  D <- matrix(c(0,1,1,0), nrow = 2, byrow = TRUE,
+              dimnames = list(c("X","Y"), c("X","Y")))
+  Dd <- as.dist(D)
+  x <- c("X","X","Y","Y","Y","X")
+  g <- c("A","A","A","B","B","B")
+  res <- compute_Rao(x, group = g, D = Dd, na.rm = TRUE)
+  testthat::expect_equal(names(res), c("A","B"))
+  # Basic sanity: values are numeric and non-negative
+  testthat::expect_true(all(res >= 0))
 })
 
-testthat::test_that("compute_Rao errors when both bin_width and bins are provided", {
-  testthat::expect_error(
-    compute_Rao(c(1, 1, 3, 3), bin_width = 2, bins = c(0, 2, 4), na.rm = TRUE)
-  )
-})
+testthat::test_that("compute_Rao validates categories and symmetry", {
+  D <- matrix(c(0,1,2,0), nrow = 2) # no dimnames and not symmetric
+  testthat::expect_error(compute_Rao(c("A","B"), D = D), "must have row and column names|must be symmetric")
 
-testthat::test_that("compute_Rao handles NA values correctly", {
-  x <- c(1, 1, 3, NA, 3)
-  testthat::expect_warning(
-    result <- compute_Rao(x, bins = c(0, 2, 4), na.rm = TRUE)
-  )
-  testthat::expect_equal(
-    result,
-    compute_Rao(c(1, 1, 3, 3), bins = c(0, 2, 4), na.rm = TRUE)
-  )
+  D2 <- matrix(c(0,1,1,0), nrow = 2, byrow = TRUE,
+               dimnames = list(c("A","B"), c("A","B")))
   testthat::expect_error(
-    compute_Rao(x, bins = c(0, 2, 4), na.rm = FALSE)
+    compute_Rao(c("A","C"), D = D2),
+    "not present in `D`"
   )
 })
 
