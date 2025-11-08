@@ -59,8 +59,20 @@ compute_Rao <- function(x, group = NULL, bin_width = NULL, bins = NULL, na.rm = 
   }
 
   if (return_df) {
-    group_members <- report_teams(x, group)
-    tibble::tibble(group = names(res), group_members = group_members, index_value = res)
+    if (is.null(group)) {
+      tibble::tibble(
+        group = NA_character_,
+        group_members = paste(x, collapse = ", "),
+        index_value = res
+      )
+    } else {
+      group_members <- report_teams(x, group)
+      tibble::tibble(
+        group = names(res),
+        group_members = unname(group_members[names(res)]),
+        index_value = unname(res)
+      )
+    }
   } else {
     res
   }
@@ -79,7 +91,7 @@ compute_Rao <- function(x, group = NULL, bin_width = NULL, bins = NULL, na.rm = 
 #' @param group Optional grouping variable of the same length as x.
 #' @param range Numeric vector of length 2 specifying the theoretical min and max; defaults to the observed range.
 #' @param na.rm Logical. If TRUE, NA values are removed.
-#' @param return Character: "CEI" (default), "S", or "E".
+#' @param return Character: "CEI" (default), "C", or "E". The deprecated alias "S" maps to "C".
 #' @param verbose Logical. If TRUE, prints the range used.
 #' @param return_df Logical. If TRUE, returns a dataframe with group, group_members and index_value.
 #'
@@ -119,11 +131,11 @@ compute_CEI <- function(x, group = NULL, range = NULL, na.rm = FALSE, return = "
 
   compute_group_cei <- function(values) {
     n <- length(values)
-    if (n < 2) return(list(CEI = 0, S = 0, E = 0))
+    if (n < 2) return(list(CEI = 0, C = 0, E = 0))
     values <- sort(values)
     obs_range <- max(values) - min(values)
     C <- ifelse(total_range > 0, obs_range / total_range, 0)
-    if (obs_range == 0) return(list(CEI = 0, S = C, E = 0))
+    if (obs_range == 0) return(list(CEI = 0, C = C, E = 0))
     ideal <- seq(min(values), max(values), length.out = n)
     abs_dev <- sum(abs(values - ideal))
     max_dev <- (obs_range * (n - 1)) / 2
@@ -131,27 +143,46 @@ compute_CEI <- function(x, group = NULL, range = NULL, na.rm = FALSE, return = "
     list(CEI = C * E, C = C, E = E)
   }
 
+  return <- toupper(return)
+  if (return == "S") {
+    warning("`return = \"S\"` is deprecated; use \"C\" instead.", call. = FALSE)
+    return <- "C"
+  }
+  if (!return %in% c("CEI", "C", "E")) {
+    stop("Invalid return value. Use 'CEI', 'C', or 'E'.")
+  }
+
   if (is.null(group)) {
-    res <- compute_group_cei(x)
+    metrics <- compute_group_cei(x)
+    component_value <- metrics[[return]]
+    if (return_df) {
+      tibble::tibble(
+        group = NA_character_,
+        group_members = paste(x, collapse = ", "),
+        index_value = component_value
+      )
+    } else {
+      component_value
+    }
   } else {
     res <- tibble::tibble(x = x, group = group) %>%
       dplyr::group_by(group) %>%
-      dplyr::summarise(res = list(compute_group_cei(x)), .groups = "drop") %>%
-      tidyr::unnest_wider(res)
-  }
+      dplyr::summarise(metrics = list(compute_group_cei(x)), .groups = "drop") %>%
+      tidyr::unnest_wider(metrics)
 
-  # Return requested component
-  res <- unlist(switch(return,
-                "CEI" = res$CEI %>% setNames(res$group),
-                "C" = res$C %>% setNames(res$group),
-                "E" = res$E %>% setNames(res$group),
-                stop("Invalid return value. Use 'CEI', 'C', or 'E'.")))
+    component_values <- res[[return]]
+    names(component_values) <- res$group
 
-  if (return_df) {
-    group_members <- report_teams(x, group)
-    tibble::tibble(group = names(res), group_members = group_members, index_value = res)
-  } else {
-    res
+    if (return_df) {
+      group_members <- report_teams(x, group)
+      tibble::tibble(
+        group = res$group,
+        group_members = unname(group_members[res$group]),
+        index_value = component_values
+      )
+    } else {
+      component_values
+    }
   }
 
 }

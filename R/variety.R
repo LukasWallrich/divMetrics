@@ -49,10 +49,21 @@ compute_Blau <- function(x, group = NULL, bin_width = NULL, bins = NULL, na.rm =
       tibble::deframe()
   }
   if (return_df) {
-    group_members <- report_teams(x, group)
-    tibble::tibble(group = names(res), group_members = group_members, index_value = res)
+    if (is.null(group)) {
+      tibble::tibble(
+        group = NA_character_,
+        group_members = paste(x, collapse = ", "),
+        index_value = res
+      )
+    } else {
+      group_members <- report_teams(x, group)
+      tibble::tibble(
+        group = names(res),
+        group_members = unname(group_members[names(res)]),
+        index_value = unname(res)
+      )
+    }
   } else {
     res
   }
-
 }
