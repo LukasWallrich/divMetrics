@@ -36,6 +36,7 @@ reference:
     contents:
       - compute_cv
       - compute_sd
+      - compute_GMD
   - title: "Variety Metrics"
     desc: "Metrics that capture categorical variety (require binning)"
     contents:
