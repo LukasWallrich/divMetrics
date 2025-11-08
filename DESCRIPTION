@@ -1,6 +1,6 @@
 Package: divMetrics
 Title: Computation and Visual Exploration of Diversity Indices
-Version: 0.0.0.9000
+Version: 0.0.0.9001
 Authors@R: 
     person("Lukas", "Wallrich", , "l.wallrich@bbk.ac.uk", role = c("aut", "cre"))
 Description: Provides functions for calculating a range of diversity
@@ -12,13 +12,14 @@ URL: https://lukaswallrich.github.io/divMetrics/, https://github.com/LukasWallri
 BugReports: https://github.com/LukasWallrich/divMetrics/issues
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.2
+RoxygenNote: 7.3.3
 Suggests:
     furrr,
     GGally,
     ggplot2,
     ggrepel,
     ggtext,
+    gridExtra,
     knitr,
     pkgdown,
     progressr,
@@ -29,6 +30,7 @@ Suggests:
 Config/testthat/edition: 3
 Imports: 
     dplyr,
+    magrittr,
     tibble,
     tidyr
 VignetteBuilder: knitr

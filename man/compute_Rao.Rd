@@ -2,38 +2,36 @@
 % Please edit documentation in R/hybrid.R
 \name{compute_Rao}
 \alias{compute_Rao}
-\title{Compute Rao's Quadratic Entropy (Rao-Simpson Index)}
+\title{Compute Rao's Quadratic Entropy (distance-matrix form)}
 \usage{
-compute_Rao(
-  x,
-  group = NULL,
-  bin_width = NULL,
-  bins = NULL,
-  na.rm = FALSE,
-  verbose = FALSE,
-  return_df = FALSE
-)
+compute_Rao(x, group = NULL, D, na.rm = FALSE, return_df = FALSE)
 }
 \arguments{
-\item{x}{Numeric vector.}
+\item{x}{Vector of categories (character or factor). Values must be present
+in the row/column names of \code{D}.}
 
-\item{group}{Optional grouping variable of the same length as x. Will be converted to a factor if not already.}
+\item{group}{Optional grouping variable of the same length as x. Will be
+converted to a factor if not already.}
 
-\item{bin_width}{Positive numeric value specifying bin width.}
-
-\item{bins}{Optional numeric vector of bin boundaries. Values are assigned to bins using left-inclusive, right-exclusive intervals (i.e., [a, b)).}
+\item{D}{A symmetric distance/dissimilarity matrix (or a \code{dist} object)
+whose row/column names define the category universe.}
 
 \item{na.rm}{Logical. If TRUE, NA values are removed.}
 
-\item{verbose}{Logical. If TRUE, prints additional messages.}
-
-\item{return_df}{Logical. If TRUE, returns a dataframe with group, group_members and index_value.}
+\item{return_df}{Logical. If TRUE, returns a dataframe with group,
+group_members and index_value.}
 }
 \value{
-A single Rao's Index value if group is NULL, or a named numeric vector with one value per group if group is provided (or a data frame if return_df is TRUE).
+A single Rao's Index value if group is NULL, or a named numeric
+vector with one value per group if group is provided (or a data frame if
+return_df is TRUE).
 }
 \description{
-Computes Rao's Quadratic Entropy for a numeric vector, optionally within groups.
-Continuous data are discretized into bins (using bin_width or bins), and the index is calculated
-based on the pairwise differences between bin midpoints weighted by the bin proportions.
+Computes Rao's Quadratic Entropy for a categorical vector using a provided
+dissimilarity matrix D. For each group, the category proportions p are
+computed and Q = p' D p is returned.
+}
+\details{
+This variant does not accept binning for continuous data. For continuous
+attributes, use \code{compute_GMD()} instead.
 }

@@ -23,7 +23,7 @@ compute_CEI(
 
 \item{na.rm}{Logical. If TRUE, NA values are removed.}
 
-\item{return}{Character: "CEI" (default), "S", or "E".}
+\item{return}{Character: "CEI" (default), "C", or "E".}
 
 \item{verbose}{Logical. If TRUE, prints the range used.}
 

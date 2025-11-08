@@ -16,9 +16,10 @@ knitr::opts_chunk$set(
 # divMetrics
 
 <!-- badges: start -->
+[![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html)
 <!-- badges: end -->
 
-`divMetrics` provides functions for calculating a range of diversity measures for continuous attributes and visualizing them. The package enables researchers to explore divergences between diversity measures to select one that matches their research questions and theoretical framework.
+`divMetrics` provides functions for calculating a range of diversity measures for continuous attributes and visualizing them. The package enables researchers to explore divergences between diversity measures to select one that matches their research questions and theoretical framework. For continuous attributes, it offers directly interpretable spread metrics (e.g., the Gini Mean Difference). Rao’s quadratic entropy is available in its general distance‑matrix form for categorical attributes.
 
 ## Installation
 
@@ -44,10 +45,11 @@ For continuous attributes (e.g., age, tenure), different metrics capture differe
 | `compute_Blau()` | Variety | Blau's index with binning for continuous data |
 | `compute_cv()` | Separation | Coefficient of variation |
 | `compute_sd()` | Separation | Standard deviation |
+| `compute_GMD()` | Separation | Gini Mean Difference (mean pairwise absolute difference; continuous Rao analogue) |
 | `compute_CEI()` | Variety | Coverage and Evenness Index |
-| `compute_Rao()` | Variety | Rao's quadratic entropy |
+| `compute_Rao()` | Variety | Rao's quadratic entropy (requires a category distance matrix `D`) |
 
-CEI and Rao's index are more complex metrics that aim to capture variety in a way that accounts for the fact that they consider the distribution of values within the range, rather than just distinct bins that may be near or far along the range.
+CEI captures coverage of a theoretical range together with within‑range evenness. Rao’s index is the expected dissimilarity between two random draws, implemented here for categorical attributes given a dissimilarity matrix. For continuous attributes, use `compute_GMD()` which equals the mean absolute difference (and is proportional to Rao with δ(a,b)=|a−b|).
 
 ## Basic Usage
 
@@ -72,6 +74,9 @@ compute_Blau(ages, bin_width = 10)
 
 # Coverage and Evenness Index
 compute_CEI(ages, range = c(20, 65))
+
+# Gini Mean Difference (continuous)
+compute_GMD(ages)
 ```
 
 ### Multiple Groups
@@ -93,15 +98,35 @@ compute_Blau(ages, group = teams, bin_width = 10)
 compute_Blau(ages, group = teams, bin_width = 10, return_df = TRUE)
 ```
 
+### Rao with a distance matrix (categorical)
+
+```{r example-rao}
+# Suppose categories A/B with a distance of 2 between them
+D <- matrix(c(0, 2,
+              2, 0), nrow = 2, byrow = TRUE,
+            dimnames = list(c("A","B"), c("A","B")))
+cats <- c("A","A","B","B","A")
+compute_Rao(cats, D = D)
+```
+
+## Compute multiple metrics at once
+
+```{r example-all}
+# For continuous attributes, include CV, SD, GMD, CEI,
+# and (optionally) Blau if you pass bins/bin_width
+compute_all_metrics(ages, method = "continuous", bin_width = 10, return_df = TRUE)
+```
+
 ## Choosing a Metric
 
 Different metrics emphasize different aspects of diversity:
 
 - **SD**: Prioritises separation between subgroups, maximised when values cluster at the extremes
 - **CV**: Focuses on disparity, maximised when values are skewed towards the lower end of the distribution
+- **GMD**: Mean absolute difference in the attribute (interpretable in original units)
 - **Blau's Index**: Captures categorical variety (depends on binning choice)
 - **CEI**: Combines range coverage with evenness of distribution
-- **Rao's Index**: Weighs differences between categories by their distances
+- **Rao's Index (categorical)**: Expected dissimilarity p' D p using a supplied distance matrix
 
 See `vignette("metrics_comparison")` for detailed comparisons and guidance.
 
@@ -111,7 +136,8 @@ See `vignette("metrics_comparison")` for detailed comparisons and guidance.
 - Support for grouped calculations
 - Flexible handling of missing values
 - Optional data frame output format
-- Binning options for variety-based metrics
+- Implementation of the novel CEI metric (Coverage & Evenness Index)
+- Automatic binning options for Blau (variety)
 
 ## References
 

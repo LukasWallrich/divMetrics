@@ -7,6 +7,7 @@
 compute_all_metrics(
   x,
   group = NULL,
+  method = c("continuous", "categorical"),
   bin_width = NULL,
   bins = NULL,
   range = NULL,
@@ -15,13 +16,17 @@ compute_all_metrics(
 )
 }
 \arguments{
-\item{x}{Numeric vector of values}
+\item{x}{Numeric vector of values (continuous attributes) or character/factor for categorical}
 
 \item{group}{Optional grouping variable}
 
-\item{bin_width}{Bin width for Blau and Rao indices (if NULL, skips these)}
+\item{method}{Character. One of "continuous" (default) or "categorical".
+When "continuous", computes CV, SD, GMD, CEI (and Blau if binning is provided).
+When "categorical", not yet implemented.}
 
-\item{bins}{Optional bin boundaries for Blau and Rao indices}
+\item{bin_width}{Bin width for Blau (if NULL, skips Blau)}
+
+\item{bins}{Optional bin boundaries for Blau}
 
 \item{range}{Optional range for CEI (if NULL, uses observed range)}
 
