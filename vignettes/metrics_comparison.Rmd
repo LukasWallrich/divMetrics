@@ -6,7 +6,7 @@ output:
     toc_depth: 2
     code_folding: hide
 vignette: >
-  %\VignetteIndexEntry{metrics_comparison}
+  %\VignetteIndexEntry{Comparing metrics for continuous attributes}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -20,12 +20,14 @@ knitr::opts_chunk$set(
 
 ```{r setup}
 library(divMetrics)
-library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(purrr)
 library(GGally)
 library(viridis)  # For color scales
 library(ggrepel) # For text annotation in chart
 library(ggtext)
-
+library(tidyr)
 ```
 
 
