@@ -43,7 +43,7 @@ To produce realistically modest effect sizes (correlations around r ≈ 0.2), we
 
 ## Simulation approach
 
-The agent-based model follows Hong & Page's (2004) hill-climbing setup while allowing for different information landscapes as in Grim et al. (2019). Ages stand in for a single salient informational attribute, with teams sampled from a workplace-relevant range of 20-70 years (a 50-year span). Team diversity is generated using a hybrid approach where a continuous diversity parameter directly controls the width and spread of team compositions. This creates a smooth continuum from very homogeneous teams (narrow age ranges of 2-3 years) through moderate diversity (wider unimodal distributions) to highly diverse teams including bimodal (two separated clusters) and skewed (dominant cluster with minority members) configurations. This approach ensures that the underlying diversity parameter has a strong, direct relationship with measured diversity while still capturing the range of team configurations observed empirically. Diversity is then measured with several commonly used indices, including the Coverage & Evenness Index (CEI), Blau, Rao, coefficient of variation, and standard deviation, all referenced to the same 20-70 range so that comparisons remain consistent across teams.
+The agent-based model follows Hong & Page's (2004) hill-climbing setup while allowing for different information landscapes as in Grim et al. (2019). Ages stand in for a single salient informational attribute, with teams sampled from a workplace-relevant range of 20-70 years (a 50-year span). Team diversity is generated using a hybrid approach where a continuous diversity parameter directly controls the width and spread of team compositions. This creates a smooth continuum from very homogeneous teams (narrow age ranges of 2-3 years) through moderate diversity (wider unimodal distributions) to highly diverse teams including bimodal (two separated clusters) and skewed (dominant cluster with minority members) configurations. This approach ensures that the underlying diversity parameter has a strong, direct relationship with measured diversity while still capturing the range of team configurations observed empirically. Diversity is then measured with several commonly used indices, including the Coverage & Evenness Index (CEI), Blau, Gini Mean Difference (GMD), coefficient of variation, and standard deviation, all referenced to the same 20-70 range so that comparisons remain consistent across teams.
 
 Each simulated team explores a landscape of 50 positions, matching the 50-year age span. We vary two structural factors: team size (5 vs. 10 members) and landscape smoothness (3 vs. 8). Lower smoothness values produce rugged landscapes where diversity offers greater search benefits, whereas higher smoothness values imply diminishing returns to diversity (Grim et al., 2019). Performance is the best peak any team member reaches, plus noise representing other determinants of outcomes.
 
@@ -265,10 +265,9 @@ run_simulation <- function(team_size, smooth_window, n_teams = 250, n_landscapes
           team_size = first(team_size),
           diversity_profile = first(diversity_profile),
           diversity_prop = first(diversity_prop),
-          Rao_Simpson_5 = compute_Rao(age, bins = seq(20, 70, by = 5)),
-          Rao_Simpson_10 = compute_Rao(age, bins = seq(20, 70, by = 10)),
           Blau_5 = compute_Blau(age, bins = seq(20, 70, by = 5)),
           Blau_10 = compute_Blau(age, bins = seq(20, 70, by = 10)),
+          GMD = compute_GMD(age),
           CV = compute_cv(age),
           SD = compute_sd(age),
           .groups = "drop"
@@ -491,17 +490,16 @@ team_summary <- results %>%
             diversity_profile = first(diversity_profile),
             diversity_prop = first(diversity_prop),
             CEI = first(CEI),
-            Rao_Simpson_5 = first(Rao_Simpson_5),
-            Rao_Simpson_10 = first(Rao_Simpson_10),
             Blau_5 = first(Blau_5),
             Blau_10 = first(Blau_10),
+            GMD = first(GMD),
             CV = first(CV),
             SD = first(SD),
             .groups = "drop")
 
 # Pivot diversity metrics to long format
 team_long <- team_summary %>%
-  pivot_longer(cols = c(CEI, Rao_Simpson_5, Rao_Simpson_10, Blau_5, Blau_10, CV, SD),
+  pivot_longer(cols = c(CEI, Blau_5, Blau_10, GMD, CV, SD),
                names_to = "metric", values_to = "value")
 
 # Compute the correlation (effect size) for each replication (chunk), condition, and metric
@@ -773,23 +771,21 @@ power_data <- corrs %>%
   tidyr::unnest(cols = c(n, power))
 
 metric_colors <- c(
-  "CEI"            = "#1b9e99",
-  "Rao_Simpson_5"  = "#d95f02",
-  "Rao_Simpson_10" = "#d95f02",
-  "Blau_5"         = "#7570b3",
-  "Blau_10"        = "#7570b3",
-  "CV"             = "#22b93e",
-  "SD"             = "#66a61e"
+  "CEI"     = "#1b9e99",
+  "GMD"     = "#d95f02",
+  "Blau_5"  = "#7570b3",
+  "Blau_10" = "#7570b3",
+  "CV"      = "#22b93e",
+  "SD"      = "#66a61e"
 )
 
 metric_linetypes <- c(
-  "CEI"            = "solid",
-  "Rao_Simpson_5"  = "21",
-  "Rao_Simpson_10" = "31",
-  "Blau_5"         = "22",
-  "Blau_10"        = "32",
-  "CV"             = "12",
-  "SD"             = "2111"
+  "CEI"     = "solid",
+  "GMD"     = "21",
+  "Blau_5"  = "22",
+  "Blau_10" = "32",
+  "CV"      = "12",
+  "SD"      = "2111"
 )
 
 power_data$metric <- factor(power_data$metric, levels = names(metric_colors)) %>%
