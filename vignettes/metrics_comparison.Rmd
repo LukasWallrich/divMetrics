@@ -28,6 +28,12 @@ library(viridis)  # For color scales
 library(ggrepel) # For text annotation in chart
 library(ggtext)
 library(tidyr)
+
+# Load internal helper functions 
+# (replacements for timesaveR functions, see https://lukaswallrich.github.io/timesaveR/)
+cor_matrix <- divMetrics:::cor_matrix
+report_cor_table <- divMetrics:::report_cor_table
+line_to_vector <- divMetrics:::line_to_vector
 ```
 
 
@@ -171,8 +177,8 @@ ggplot(div_long, aes(x = Measure, y = Value, fill = Measure)) +
 ```{r correlation-analysis, fig.width=8, fig.height=6}
 div_scores %>%
   select(CEI:SD) %>%
-  timesaveR::cor_matrix() %>% 
-  timesaveR::report_cor_table()
+  cor_matrix() %>%
+  report_cor_table()
 ```
 
 Key points to note:
@@ -414,10 +420,11 @@ The chart below shows, for each common Blau value the team with the highest and 
 # Plot CEI range for most common Blau value in each .1 range
 
   outliers_parsed <- outliers %>%
-    mutate(blau_group = floor(Blau_5 * 10)) %>% 
+    mutate(blau_group = floor(Blau_5 * 10)) %>%
     group_by(blau_group) %>%
-    filter(count == max(count), Blau_5 > .1) %>% 
-    mutate(members = map(group_members, ~ timesaveR::line_to_vector(.x, return = "vector") %>% as.numeric())) %>%
+    filter(count == max(count), Blau_5 > .1) %>%
+    mutate(members = map(group_members,
+                         ~ line_to_vector(.x, return = "vector"))) %>%
     unnest(cols = members)
 
   # 2) Create separate summary frames for min and max teams
@@ -565,7 +572,8 @@ The chart below shows, for each rounded CV value the team with the highest and l
 # Plot CEI range for CV values rounded to the nearest .05
 
   outliers_parsed <- outliers %>%
-    mutate(members = map(group_members, ~ timesaveR::line_to_vector(.x, return = "vector") %>% as.numeric())) %>%
+    mutate(members = map(group_members,
+                         ~ line_to_vector(.x, return = "vector"))) %>%
     unnest(cols = members)
 
   # 2) Create separate summary frames for min and max teams

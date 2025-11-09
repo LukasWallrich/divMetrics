@@ -68,3 +68,149 @@ report_teams <- function(attribute, team) {
   }
   setNames(sapply(ord, function(t) paste(attribute[team == t], collapse = ", ")), ord)
 }
+
+#' Parse Line to Vector
+#'
+#' Converts a comma-separated string into a numeric vector.
+#' This is a simplified replacement for timesaveR::line_to_vector().
+#'
+#' @param x A character string with comma-separated values.
+#' @param return A character string indicating what to return. Only
+#'   "vector" is supported.
+#'
+#' @return A numeric vector of the parsed values.
+#'
+#' @source https://lukaswallrich.github.io/timesaveR/
+#'
+#' @keywords internal
+line_to_vector <- function(x, return = "vector") {
+  if (return != "vector") {
+    stop("Only return = 'vector' is currently supported.")
+  }
+  # Split by comma and convert to numeric
+  as.numeric(trimws(strsplit(x, ",")[[1]]))
+}
+
+#' Correlation Matrix
+#'
+#' Creates a correlation matrix from numeric data. This is a simplified
+#' replacement for timesaveR::cor_matrix().
+#'
+#' @param x A data frame with numeric columns.
+#'
+#' @return A correlation matrix object with additional attributes for
+#'   formatting.
+#'
+#' @source https://lukaswallrich.github.io/timesaveR/
+#' 
+#' @keywords internal
+cor_matrix <- function(x) {
+  # Calculate correlation matrix
+  cor_mat <- cor(x, use = "complete.obs")
+
+  # Store the original data for later use in report_cor_table
+  attr(cor_mat, "data") <- x
+  class(cor_mat) <- c("cor_matrix", "matrix")
+
+  cor_mat
+}
+
+#' Report Correlation Table
+#'
+#' Creates an APA-formatted correlation table with descriptive statistics,
+#' correlations, confidence intervals, and significance tests. This is a
+#' simplified replacement for timesaveR::report_cor_table().
+#'
+#' @param x A correlation matrix (result from cor_matrix()).
+#'
+#' @return Prints a formatted correlation table and returns invisibly.
+#'
+#' @source https://lukaswallrich.github.io/timesaveR/
+#'
+#' @keywords internal
+report_cor_table <- function(x) {
+  # Get the original data if available
+  data <- attr(x, "data")
+
+  if (is.null(data)) {
+    stop(
+      "Correlation matrix must have 'data' attribute. ",
+      "Use cor_matrix() to create it."
+    )
+  }
+
+  # Compute descriptive statistics
+  means <- colMeans(data, na.rm = TRUE)
+  sds <- apply(data, 2, sd, na.rm = TRUE)
+  n <- nrow(data)
+
+  # Get variable names
+  var_names <- colnames(x)
+  n_vars <- length(var_names)
+
+  # Initialize output table
+  output <- data.frame(
+    Variable = var_names,
+    M = sprintf("%.2f", means),
+    SD = sprintf("%.2f", sds),
+    stringsAsFactors = FALSE
+  )
+
+  # Add correlation columns with CIs and significance
+  for (i in 1:n_vars) {
+    col_name <- as.character(i)
+    col_data <- character(n_vars)
+
+    for (j in 1:n_vars) {
+      r <- x[i, j]
+
+      # Handle diagonal (r = 1)
+      if (i == j) {
+        col_data[j] <- "-"
+      } else if (i > j) {
+        # Lower triangle (already calculated above)
+        col_data[j] <- ""
+      } else {
+        # Calculate confidence intervals using Fisher's z transformation
+        z <- 0.5 * log((1 + r) / (1 - r))
+        se_z <- 1 / sqrt(n - 3)
+        ci_lower <- (exp(2 * (z - 1.96 * se_z)) - 1) /
+          (exp(2 * (z - 1.96 * se_z)) + 1)
+        ci_upper <- (exp(2 * (z + 1.96 * se_z)) - 1) /
+          (exp(2 * (z + 1.96 * se_z)) + 1)
+
+        # Calculate p-value
+        t_stat <- r * sqrt(n - 2) / sqrt(1 - r^2)
+        p_value <- 2 * (1 - pt(abs(t_stat), n - 2))
+
+        # Add significance stars
+        sig <- ifelse(p_value < 0.001, "***",
+          ifelse(p_value < 0.01, "**",
+            ifelse(p_value < 0.05, "*", "")))
+
+        # Store formatted value
+        col_data[j] <- paste0(
+          sprintf("%.2f", r), " [",
+          sprintf("%.2f", ci_lower), ", ",
+          sprintf("%.2f", ci_upper), "]",
+          sig
+        )
+      }
+    }
+
+    output[[col_name]] <- col_data
+  }
+
+  # Rename numeric columns to variable numbers for the table
+  names(output)[-(1:3)] <- as.character(1:n_vars)
+
+  # Print header information
+  cat("Correlation Table with Confidence Intervals (95%)\n")
+  cat("Note: *** p < .001, ** p < .01, * p < .05\n\n")
+
+  # Print the table
+  print(output, quote = FALSE, right = TRUE)
+
+  # Return invisibly for chaining
+  invisible(output)
+}
