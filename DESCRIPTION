@@ -14,26 +14,14 @@ Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Suggests:
-    furrr,
-    gt,
-    GGally,
     ggplot2,
     ggrepel,
-    ggtext,
-    gridExtra,
-    knitr,
+    gt,
     pkgdown,
-    progressr,
-    pwr,
-    rmarkdown,
-    testthat (>= 3.0.0),
-    viridis,
-    ggExtra,
-    patchwork
+    testthat (>= 3.0.0)
 Config/testthat/edition: 3
-Imports: 
+Imports:
     dplyr,
     magrittr,
     tibble,
     tidyr
-VignetteBuilder: knitr

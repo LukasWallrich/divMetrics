@@ -2,3 +2,4 @@
 ^\.Rproj\.user$
 ^LICENSE\.md$
 ^vignettes/statistical_power\.Rmd$
+^vignettes/metrics_comparison\.Rmd$
