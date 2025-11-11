@@ -1,3 +1,4 @@
 ^divMetrics\.Rproj$
 ^\.Rproj\.user$
 ^LICENSE\.md$
+^vignettes/statistical_power\.Rmd$

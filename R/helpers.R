@@ -115,102 +115,96 @@ cor_matrix <- function(x) {
   cor_mat
 }
 
+## Report Correlation Table (gt)
+#'
 #' Report Correlation Table
 #'
-#' Creates an APA-formatted correlation table with descriptive statistics,
-#' correlations, confidence intervals, and significance tests. This is a
-#' simplified replacement for timesaveR::report_cor_table().
+#' Creates a compact, APA-style correlation table with descriptive statistics
+#' (M, SD), lower-triangular correlations, 95% CIs, and significance stars,
+#' returned as a formatted `gt` table. Simplified replacement for
+#' `timesaveR::report_cor_table()`.
 #'
-#' @param x A correlation matrix (result from cor_matrix()).
+#' @param x A correlation matrix produced by `cor_matrix()` (must carry the
+#'   original data in attribute `"data"`).
 #'
-#' @return Prints a formatted correlation table and returns invisibly.
+#' @return A `gt_tbl` object. If the `gt` package is not installed, an error is
+#'   raised with an instruction to install it.
 #'
 #' @source https://lukaswallrich.github.io/timesaveR/
 #'
 #' @keywords internal
 report_cor_table <- function(x) {
-  # Get the original data if available
-  data <- attr(x, "data")
-
-  if (is.null(data)) {
-    stop(
-      "Correlation matrix must have 'data' attribute. ",
-      "Use cor_matrix() to create it."
-    )
+  if (!requireNamespace("gt", quietly = TRUE)) {
+    stop("Package 'gt' is required to format the correlation table. Please install it with install.packages('gt').")
   }
 
-  # Compute descriptive statistics
+  data <- attr(x, "data")
+  if (is.null(data)) {
+    stop("Correlation matrix must have 'data' attribute. Use cor_matrix() to create it.")
+  }
+
+  # Descriptives and meta
   means <- colMeans(data, na.rm = TRUE)
   sds <- apply(data, 2, sd, na.rm = TRUE)
   n <- nrow(data)
-
-  # Get variable names
   var_names <- colnames(x)
   n_vars <- length(var_names)
 
-  # Initialize output table
+  # Prepare table shell
   output <- data.frame(
-    Variable = var_names,
-    M = sprintf("%.2f", means),
-    SD = sprintf("%.2f", sds),
+    Variable = paste0(seq_len(n_vars), ". ", var_names),
+    M = as.numeric(means),
+    SD = as.numeric(sds),
     stringsAsFactors = FALSE
   )
 
-  # Add correlation columns with CIs and significance
-  for (i in 1:n_vars) {
-    col_name <- as.character(i)
-    col_data <- character(n_vars)
-
-    for (j in 1:n_vars) {
-      r <- x[i, j]
-
-      # Handle diagonal (r = 1)
+  # Fill lower-triangular correlations with CI and sig
+  for (j in seq_len(n_vars)) {
+    col_vals <- character(n_vars)
+    for (i in seq_len(n_vars)) {
       if (i == j) {
-        col_data[j] <- "-"
-      } else if (i > j) {
-        # Lower triangle (already calculated above)
-        col_data[j] <- ""
+        col_vals[i] <- "—"
+      } else if (i < j) {
+        # upper triangle -> leave blank
+        col_vals[i] <- ""
       } else {
-        # Calculate confidence intervals using Fisher's z transformation
-        z <- 0.5 * log((1 + r) / (1 - r))
-        se_z <- 1 / sqrt(n - 3)
-        ci_lower <- (exp(2 * (z - 1.96 * se_z)) - 1) /
-          (exp(2 * (z - 1.96 * se_z)) + 1)
-        ci_upper <- (exp(2 * (z + 1.96 * se_z)) - 1) /
-          (exp(2 * (z + 1.96 * se_z)) + 1)
+        r <- x[i, j]
+        r_clamped <- max(min(r, 0.999999), -0.999999)
+        z <- 0.5 * log((1 + r_clamped) / (1 - r_clamped))
+        se_z <- 1 / sqrt(max(n - 3, 1))
+        ci_lower <- (exp(2 * (z - 1.96 * se_z)) - 1) / (exp(2 * (z - 1.96 * se_z)) + 1)
+        ci_upper <- (exp(2 * (z + 1.96 * se_z)) - 1) / (exp(2 * (z + 1.96 * se_z)) + 1)
 
-        # Calculate p-value
-        t_stat <- r * sqrt(n - 2) / sqrt(1 - r^2)
-        p_value <- 2 * (1 - pt(abs(t_stat), n - 2))
-
-        # Add significance stars
+        # p-value (guard against divide-by-zero)
+        denom <- sqrt(max(1 - r_clamped^2, .Machine$double.eps))
+        t_stat <- r_clamped * sqrt(max(n - 2, 1)) / denom
+        p_value <- 2 * (1 - stats::pt(abs(t_stat), df = max(n - 2, 1)))
         sig <- ifelse(p_value < 0.001, "***",
-          ifelse(p_value < 0.01, "**",
-            ifelse(p_value < 0.05, "*", "")))
+                 ifelse(p_value < 0.01,  "**",
+                 ifelse(p_value < 0.05,  "*",  "")))
 
-        # Store formatted value
-        col_data[j] <- paste0(
+        col_vals[i] <- paste0(
           sprintf("%.2f", r), " [",
-          sprintf("%.2f", ci_lower), ", ",
-          sprintf("%.2f", ci_upper), "]",
+          sprintf("%.2f", ci_lower), ", ", sprintf("%.2f", ci_upper), "]",
           sig
         )
       }
     }
-
-    output[[col_name]] <- col_data
+    output[[as.character(j)]] <- col_vals
   }
 
-  # Rename numeric columns to variable numbers for the table
-  names(output)[-(1:3)] <- as.character(1:n_vars)
+  # Build gt table
+  center_cols <- setdiff(colnames(output), "Variable")
+  gt_tbl <- gt::gt(output) |>
+    gt::fmt_number(columns = c("M", "SD"), decimals = 2) |>
+    gt::cols_align(align = "left", columns = "Variable") |>
+    gt::cols_align(align = "center", columns = center_cols) |>
+    gt::tab_options(
+      table.font.size = gt::px(13)
+    ) |>
+    gt::tab_source_note(
+      source_note = gt::md("Note. Values are Pearson correlations with 95% CIs in brackets. *** p < .001, ** p < .01, * p < .05.")
+    )
 
-  # Print header information
-  cat("Correlation Table with Confidence Intervals (95%)\n")
-  cat("Note: *** p < .001, ** p < .01, * p < .05\n\n")
-
-  # Print the table
-  print(output, quote = FALSE, right = TRUE)
-
-  # Return invisibly for chaining
-  invisible(output)
+  gt_tbl
 }

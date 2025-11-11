@@ -772,7 +772,7 @@ power_data <- corrs %>%
 
 metric_colors <- c(
   "CEI"     = "#1b9e99",
-  "GMD"     = "#d95f02",
+ # "GMD"     = "#d95f02",
   "Blau_5"  = "#7570b3",
   "Blau_10" = "#7570b3",
   "CV"      = "#22b93e",
@@ -781,7 +781,7 @@ metric_colors <- c(
 
 metric_linetypes <- c(
   "CEI"     = "solid",
-  "GMD"     = "21",
+ # "GMD"     = "21",
   "Blau_5"  = "22",
   "Blau_10" = "32",
   "CV"      = "12",
@@ -790,6 +790,10 @@ metric_linetypes <- c(
 
 power_data$metric <- factor(power_data$metric, levels = names(metric_colors)) %>%
   relevel("CEI") %>% fct_rev()
+
+
+power_data <- power_data %>%
+    filter(!metric  == "GMD")
 
 # Create better facet labels
 power_data <- power_data %>%
@@ -801,14 +805,14 @@ ggplot(power_data, aes(x = n, y = power, color = metric, linetype = metric)) +
   geom_line(linewidth = 0.8) +
   geom_hline(yintercept = 0.80, linetype = "dashed", color = "grey40", linewidth = 0.5) +
   geom_vline(xintercept = 103, linetype = "dotted", color = "grey60", linewidth = 0.5) +
-  annotate("text", x = 103, y = 0.95, label = "N=103\n(meta-analysis\nmedian)",
-           size = 3, hjust = -0.1, color = "grey40") +
+  #annotate("text", x = 103, y = 0.95, label = "N=103\n(meta-analysis\nmedian)",
+  #         size = 3, hjust = -0.1, color = "grey40") +
   scale_color_manual(name = "Metric", values = metric_colors) +
   scale_linetype_manual(name = "Metric", values = metric_linetypes) +
   scale_y_continuous(breaks = seq(0, 1, 0.2), labels = scales::percent) +
   labs(
     title = "Statistical Power by Sample Size and Diversity Metric",
-    subtitle = "Dashed line marks 80% power and dotted line the meta-analytic median sample size",
+    caption = "Dashed line marks 80% power and dotted line the meta-analytic median sample size (N = 103)",
     x = "Sample Size (Number of Teams)",
     y = "Statistical Power"
   ) +

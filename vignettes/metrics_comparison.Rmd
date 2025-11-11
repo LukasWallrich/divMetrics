@@ -28,8 +28,9 @@ library(viridis)  # For color scales
 library(ggrepel) # For text annotation in chart
 library(ggtext)
 library(tidyr)
+library(gt)  # For tables
 
-# Load internal helper functions 
+# Load internal helper functions
 # (replacements for timesaveR functions, see https://lukaswallrich.github.io/timesaveR/)
 cor_matrix <- divMetrics:::cor_matrix
 report_cor_table <- divMetrics:::report_cor_table
@@ -195,9 +196,10 @@ example_teams <- bind_rows(
   tibble(ages = c(20, 30, 40, 50, 60), team = "A"),
   tibble(ages = c(20, 60, 60, 60, 60), team = "B"),
   tibble(ages = c(20, 20, 20, 20, 60), team = "C"),
-  tibble(ages = c(29, 30, 49, 50, 60), team = "D"),
-  tibble(ages = c(30, 31, 50, 51, 61), team = "E"),
-  tibble(ages = c(20, 20, 20, 29, 30), team = "F")
+  tibble(ages = c(24, 29, 30, 49, 50), team = "D"),
+  tibble(ages = c(25, 30, 31, 50, 51), team = "E"),
+  tibble(ages = c(30, 30, 40, 50, 50), team = "F"),
+  tibble(ages = c(20, 20, 40, 60, 60), team = "G")
 )
 
 # Calculate metrics for each team
@@ -226,8 +228,7 @@ example_scores <- example_teams %>%
 example_scores_long <- example_scores %>%
   pivot_longer(
     cols = c(
-      CV, SD, Blau_5, Blau_10,
-      GMD, CEI
+      CV, SD, Blau_5, Blau_10, CEI
     ),
     names_to = "Index",
     values_to = "Score"
@@ -239,8 +240,8 @@ example_scores_long <- example_scores %>%
     indicator_type = factor(
       if_else(Index %in% c("CV", "SD", "Blau_5", "Blau_10"),
               "Established Indicators",
-              "Hybrid Indicators"),
-      levels = c("Established Indicators", "Hybrid Indicators")
+              "Coverage & Evenness Index"),
+      levels = c("Established Indicators", "Coverage & Evenness Index")
     )
   )
 
@@ -251,7 +252,7 @@ example_scores_long <- example_scores_long %>%
     Index = factor(Index,
       levels = c(
         "CV", "SD", "Blau_5", "Blau_10",
-        "GMD", "CEI"
+        "CEI"
       )
     ),
     # Map indices to numeric positions with a gap between groups
@@ -260,8 +261,7 @@ example_scores_long <- example_scores_long %>%
       Index == "SD" ~ 2,
       Index == "Blau_5" ~ 3,
       Index == "Blau_10" ~ 4,
-      Index == "GMD" ~ 6,
-      Index == "CEI" ~ 8
+      Index == "CEI" ~ 6
     )
   )
 
@@ -270,14 +270,14 @@ line_types <- c(
   "A" = "solid",
   "B" = "dashed", "C" = "dashed",
   "D" = "dotdash", "E" = "dotdash",
-  "F" = "longdash"
+  "F" = "longdash", "G" = "longdash"
 )
 
 team_colors <- c(
   "A" = "black",
   "B" = "darkred",  "C" = "red",
   "D" = "darkblue", "E" = "blue",
-  "F" = "forestgreen"
+  "F" = "forestgreen", "G" = "#004000"
 )
 
 # Create the base plot with numeric x positions to allow line connections
@@ -292,17 +292,14 @@ p <- ggplot(
   geom_point() +
   # Add subtle background sections to distinguish indicator types
   annotate("rect", xmin = 0.5, xmax = 4.5, ymin = -Inf, ymax = Inf,
-           alpha = 0.1, fill = "grey") +
-  annotate("rect", xmin = 5.5, xmax = 8.5, ymin = -Inf, ymax = Inf,
            alpha = 0.1, fill = "white") +
-  # Add vertical separator line
-  annotate("vline", xintercept = 4.7, linetype = "dashed",
-           color = "grey70", size = 0.3) +
+  annotate("rect", xmin = 5.5, xmax = 7.2, ymin = -Inf, ymax = Inf,
+           alpha = 0.1, fill = "#807f7f") +
   scale_linetype_manual(values = line_types) +
   scale_color_manual(values = team_colors) +
   scale_linewidth_manual(values = c(
-    "A" = 1.2, "B" = 0.8, "C" = 0.8,
-    "D" = 0.8, "E" = 0.8, "F" = 0.8
+    "A" = 0.6, "B" = 0.6, "C" = 0.6,
+    "D" = 0.6, "E" = 0.6, "F" = 0.6, "G" = 0.6
   )) +
   labs(
     title = "Comparison of Normalised Diversity Indices",
@@ -316,17 +313,10 @@ p <- ggplot(
     panel.grid.minor.x = element_blank()
   ) +
   scale_x_continuous(
-    breaks = c(1, 2, 3, 4, 6, 8),
-    labels = c("CV", "SD", "Blau (5)", "Blau (10)", "GMD", "CEI"),
+    breaks = c(1, 2, 3, 4, 6),
+    labels = c("CV", "SD", "Blau (5)", "Blau (10)", "CEI"),
     expand = expansion(mult = c(0.08, 0.08))
   )
-
-# Add section labels
-p <- p +
-  annotate("text", x = 2.5, y = Inf, label = "Established Indicators",
-           vjust = 1.5, size = 3, color = "grey50") +
-  annotate("text", x = 6.5, y = Inf, label = "Hybrid Indicators",
-           vjust = 1.5, size = 3, color = "grey50")
 
 # Add labels on the left (at CV)
 label_data_left <- example_scores_long %>%
@@ -416,7 +406,7 @@ outliers <- div_scores %>%
 
 The chart below shows, for each common Blau value the team with the highest and lowest CEI. This highlights how much CEI can vary even when Blau is constant.
 
-```{r fig.height=6, fig.width=10}
+```{r divergence_blau_examples, fig.height=5, fig.width=10}
 # Plot CEI range for most common Blau value in each .1 range
 
   outliers_parsed <- outliers %>%
@@ -427,14 +417,22 @@ The chart below shows, for each common Blau value the team with the highest and 
                          ~ line_to_vector(.x, return = "vector"))) %>%
     unnest(cols = members)
 
+  # Calculate fold-change for each Blau bin
+  fold_changes <- outliers_parsed %>%
+    group_by(Blau_5) %>%
+    summarise(
+      max_CEI = max(CEI),
+      min_CEI = min(CEI),
+      fold_change = max_CEI / pmax(min_CEI, 0.01),  # Avoid division by zero
+      .groups = "drop"
+    )
+
   # 2) Create separate summary frames for min and max teams
   annotation_min <- outliers_parsed %>%
     filter(score_type == "min") %>%
     group_by(Blau_5, score_type) %>%
     summarise(
       CEI   = first(CEI),
-      CEI_C = compute_CEI(members, range = c(20, 70), return = "C"),
-      CEI_E = compute_CEI(members, range = c(20, 70), return = "E"),
       x_center = mean(members),  # center of the distribution
       .groups = "drop"
     )
@@ -444,89 +442,156 @@ The chart below shows, for each common Blau value the team with the highest and 
     group_by(Blau_5, score_type) %>%
     summarise(
       CEI   = first(CEI),
-      CEI_C = compute_CEI(members, range = c(20, 70), return = "C"),
-      CEI_E = compute_CEI(members, range = c(20, 70), return = "E"),
       x_center = mean(members),
       .groups = "drop"
     )
 
   my_colors <- c(
-  "min" = "#918821",   # e.g., a teal/blue
-  "max" = "#8297ed"    # e.g., a reddish color
-)
-  
-  ggplot() +
+    "min" = "#918821",
+    "max" = "#8297ed"
+  )
+
+ p_div_blau <- ggplot() +
     geom_hline(yintercept = 0, color = "black") +
     geom_dotplot(
       data = outliers_parsed %>% filter(score_type == "min"),
       aes(x = members, fill = score_type),
       binwidth = 1,
-      stackdir = "down"
+      stackdir = "down",
+      dotsize = 2
     ) +
 
     geom_dotplot(
       data = outliers_parsed %>% filter(score_type == "max"),
       aes(x = members, fill = score_type),
       binwidth = 1,
-      stackdir = "up" 
+      stackdir = "up",
+      dotsize = 2
     ) +
 
+    # CEI label for min (simplified)
     geom_text(
       data = annotation_min,
       aes(
         x = mean(c(20, 70)),
-        y = -0.4,  
-        label = paste0(
-          "CEI = ", round(CEI, 2),
-          " (C = ", round(CEI_C, 2),
-          ", E = ", round(CEI_E, 2), ")"
-        ),
+        y = -0.45,
+        label = paste0("CEI = ", round(CEI, 2)),
         color = score_type
       ),
-      size = 3.5,
+      size = 4.5,
+      fontface = "bold",
       inherit.aes = FALSE
     ) +
 
+    # CEI label for max (simplified)
     geom_text(
       data = annotation_max,
       aes(
         x = mean(c(20, 70)),
-        y = 0.4,  
-        label = paste0(
-          "CEI = ", round(CEI, 2),
-          " (C = ", round(CEI_C, 2),
-          ", E = ", round(CEI_E, 2), ")"
-        ),
-                color = score_type
+        y = 0.45,
+        label = paste0("CEI = ", round(CEI, 2)),
+        color = score_type
       ),
-      size = 3.5,
+      size = 4.5,
+      fontface = "bold",
       inherit.aes = FALSE
     ) +
 
-    facet_wrap(~ Blau_5, ncol = 3) +
-    scale_x_continuous(limits = c(20, 70), breaks = seq(20, 70, by = 5)) +
+    # Add fold-change annotation
+    geom_text(
+      data = fold_changes,
+      aes(
+        x = mean(c(20, 70)),
+        y = -0.7,
+        label = paste0(round(fold_change, 1), "× variation")
+      ),
+      size = 3.5,
+      color = "black",
+      fontface = "italic",
+      inherit.aes = FALSE
+    ) +
+
+    facet_wrap(~ Blau_5, ncol = 2) +
+    scale_x_continuous(limits = c(20, 70), breaks = seq(20, 70, by = 10)) +
     # Avoid clipping if text goes beyond panel
     coord_cartesian(clip = "off") +
-      theme_void() +
-  theme(
-    strip.background = element_rect(fill = "grey85", color = NA),
-    strip.text = element_text(color = "black"),
-    legend.position = "none",
-        plot.subtitle = element_markdown()
-
-  ) +
+    theme_void() +
+    theme(
+      strip.background = element_rect(fill = "grey85", color = NA),
+      strip.text = element_text(color = "black", size = 11, face = "bold"),
+      legend.position = "none",
+      plot.subtitle = element_markdown(),
+      plot.margin = margin(10, 10, 20, 10)
+    ) +
     labs(
       title = "Deviations between CEI and Blau in 5-member teams",
-    subtitle = paste0(
-      "Showing the <b><span style='color:", my_colors["max"], ";'>most</span></b> ",
-      "and <b><span style='color:", my_colors["min"], ";'>least</span> </b>",
-      "CEI-diverse team for common Blau values<br>&nbsp;"
-    )
+      subtitle = paste0(
+        "Showing the <b><span style='color:", my_colors["max"], ";'>most</span></b> ",
+        "and <b><span style='color:", my_colors["min"], ";'>least</span></b> ",
+        "CEI-diverse team for common Blau values"
+      )
     ) +
-      scale_fill_manual(values = my_colors) +
-  scale_color_manual(values = my_colors) 
+    scale_fill_manual(values = my_colors) +
+    scale_color_manual(values = my_colors)
 
+p_div_blau
+```
 
+```{r blau_cei_breakdown}
+# Create a table showing CEI components for the 12 teams shown in the Blau chart
+
+# Get unique team data (one row per team/score_type combination)
+blau_table_data <- outliers %>%
+  mutate(blau_group = floor(Blau_5 * 10)) %>%
+  group_by(blau_group) %>%
+  filter(count == max(count), Blau_5 > .1) %>%
+  ungroup() %>%
+  select(Blau_5, CEI, group_members, score_type) %>%
+  distinct() %>%
+  arrange(Blau_5, desc(score_type))
+
+# Calculate C and E components for each team
+blau_table_data <- blau_table_data %>%
+  rowwise() %>%
+  mutate(
+    ages = list(line_to_vector(group_members, return = "vector") %>% as.numeric()),
+    C = compute_CEI(ages, range = c(20, 70), return = "C"),
+    E = compute_CEI(ages, range = c(20, 70), return = "E"),
+    .keep = "unused"
+  ) %>%
+  ungroup() %>%
+  mutate(
+    Blau_Group = round(Blau_5, 2),
+    Type = ifelse(score_type == "max", "High CEI", "Low CEI"),
+    CEI = round(CEI, 3),
+    C = round(C, 3),
+    E = round(E, 3)
+  ) %>%
+  select(Blau_Group, Type, CEI, C, E) %>%
+  group_by(Blau_Group) %>%
+  arrange(desc(Type), .by_group = TRUE)
+
+# Create gt table
+blau_table_data %>%
+  gt(groupname_col = "Blau_Group") %>%
+  tab_header(
+    title = "Coverage & Evenness Index (CEI) Components",
+    subtitle = "Broken down by Coverage (C) and Evenness (E) for the 12 teams shown in Blau divergence chart"
+  ) %>%
+  cols_label(
+    Type = "Type",
+    CEI = "CEI",
+    C = "Coverage (C)",
+    E = "Evenness (E)"
+  ) %>%
+  fmt_number(
+    columns = c(CEI, C, E),
+    decimals = 3
+  ) %>%
+  tab_options(
+    row_group.as_column = FALSE,
+    container.overflow.x = TRUE
+  )
 ```
 
 ### Comparing the Coefficient of Variation and CEI
@@ -568,116 +633,208 @@ outliers <- div_scores %>%
 
 The chart below shows, for each rounded CV value the team with the highest and lowest CEI. This highlights that particularly for intermediate CV values, CEI can vary widely (and towards high CV values, the relationship becomes reversed as evenness drops).
 
-```{r fig.height=4, fig.width=10}
-# Plot CEI range for CV values rounded to the nearest .05
+```{r divergence_cv_examples, fig.height=5, fig.width=10}
+# Plot CEI range for selected CV values
 
   outliers_parsed <- outliers %>%
-    mutate(members = map(group_members,
-                         ~ line_to_vector(.x, return = "vector"))) %>%
-    unnest(cols = members)
+    # Keep only specific CV bins
+    filter(CV %in% c(0.1, 0.2, 0.25, 0.3, 0.4, 0.5)) %>%
+    mutate(members = map(group_members, ~ line_to_vector(.x, return = "vector") %>% as.numeric())) %>%
+    unnest(cols = members) %>%
+    # Add CV label (numeric value only)
+    mutate(
+      CV_label = CV
+    )
+
+  # Calculate fold-change for each CV bin
+  fold_changes <- outliers_parsed %>%
+    group_by(CV) %>%
+    summarise(
+      max_CEI = max(CEI),
+      min_CEI = min(CEI),
+      fold_change = max_CEI / pmax(min_CEI, 0.01),  # Avoid division by zero
+      .groups = "drop"
+    ) %>%
+    left_join(outliers_parsed %>% select(CV, CV_label) %>% distinct(), by = "CV")
 
   # 2) Create separate summary frames for min and max teams
   annotation_min <- outliers_parsed %>%
     filter(score_type == "min") %>%
-    group_by(CV, score_type) %>%
+    group_by(CV) %>%
     summarise(
       CEI   = first(CEI),
-      CEI_C = compute_CEI(members, range = c(20, 70), return = "C"),
-      CEI_E = compute_CEI(members, range = c(20, 70), return = "E"),
-      x_center = mean(members),  # center of the distribution
+      x_center = mean(members),
+      score_type = first(score_type),
       .groups = "drop"
-    )
+    ) %>%
+    distinct(CV, .keep_all = TRUE) %>%
+    # Add CV_label so faceting assigns each label to the right panel
+    left_join(outliers_parsed %>% select(CV, CV_label) %>% distinct(), by = "CV")
 
   annotation_max <- outliers_parsed %>%
     filter(score_type == "max") %>%
-    group_by(CV, score_type) %>%
+    group_by(CV) %>%
     summarise(
       CEI   = first(CEI),
-      CEI_C = compute_CEI(members, range = c(20, 70), return = "C"),
-      CEI_E = compute_CEI(members, range = c(20, 70), return = "E"),
       x_center = mean(members),
+      score_type = first(score_type),
       .groups = "drop"
-    )
+    ) %>%
+    distinct(CV, .keep_all = TRUE) %>%
+    # Add CV_label so faceting assigns each label to the right panel
+    left_join(outliers_parsed %>% select(CV, CV_label) %>% distinct(), by = "CV")
 
   my_colors <- c(
-  "min" = "#918821",   # e.g., a teal/blue
-  "max" = "#8297ed"    # e.g., a reddish color
-)
+    "min" = "#918821",   
+    "max" = "#8297ed"    
+  )
   
-  ggplot() +
+  p_div_cv <- ggplot() +
     geom_hline(yintercept = 0, color = "black") +
     geom_dotplot(
       data = outliers_parsed %>% filter(score_type == "min"),
       aes(x = members, fill = score_type),
       binwidth = 1,
-      stackdir = "down"
+      stackdir = "down",
+      dotsize = 2
     ) +
 
     geom_dotplot(
       data = outliers_parsed %>% filter(score_type == "max"),
       aes(x = members, fill = score_type),
       binwidth = 1,
-      stackdir = "up" 
+      stackdir = "up",
+      dotsize = 2
     ) +
 
+    # CEI label for min (removed C & E)
     geom_text(
       data = annotation_min,
       aes(
         x = mean(c(20, 70)),
-        y = -0.4,  
-        label = paste0(
-          "CEI = ", round(CEI, 2),
-          " (C = ", round(CEI_C, 2),
-          ", E = ", round(CEI_E, 2), ")"
-        ),
+        y = -0.45,  
+        label = paste0("CEI = ", round(CEI, 2)),
         color = score_type
       ),
-      size = 3.5,
+      size = 4.5,
+      fontface = "bold",
       inherit.aes = FALSE
     ) +
 
+    # CEI label for max (removed C & E)
     geom_text(
       data = annotation_max,
       aes(
         x = mean(c(20, 70)),
-        y = 0.4,  
-        label = paste0(
-          "CEI = ", round(CEI, 2),
-          " (C = ", round(CEI_C, 2),
-          ", E = ", round(CEI_E, 2), ")"
-        ),
-                color = score_type
+        y = 0.45,  
+        label = paste0("CEI = ", round(CEI, 2)),
+        color = score_type
       ),
-      size = 3.5,
+      size = 4.5,
+      fontface = "bold",
       inherit.aes = FALSE
     ) +
 
-    facet_wrap(~ CV, ncol = 3) +
-    scale_x_continuous(limits = c(20, 70), breaks = seq(20, 70, by = 5)) +
-    # Avoid clipping if text goes beyond panel
-    coord_cartesian(clip = "off") +
-      theme_void() +
-  theme(
-    strip.background = element_rect(fill = "grey85", color = NA),
-    strip.text = element_text(color = "black"),
-    legend.position = "none",
-        plot.subtitle = element_markdown()
+    # Add fold-change annotation
+    geom_text(
+      data = fold_changes,
+      aes(
+        x = mean(c(20, 70)),
+        y = -0.7,
+        label = paste0(round(fold_change, 1), "× variation")
+      ),
+      size = 3.5,
+      color = "black",
+      fontface = "italic",
+      inherit.aes = FALSE
+    ) +
 
-  ) +
+    facet_wrap(~ CV_label, nrow = 3) +
+    scale_x_continuous(limits = c(20, 70), breaks = seq(20, 70, by = 10)) +
+    coord_cartesian(clip = "off") +
+    theme_void() +
+    theme(
+      strip.background = element_rect(fill = "grey85", color = NA),
+      strip.text = element_text(color = "black", size = 11, face = "bold"),
+      legend.position = "none",
+      plot.subtitle = element_markdown(),
+      plot.margin = margin(10, 10, 20, 10)
+    ) +
     labs(
       title = "Deviations between CEI and CV in 5-member teams",
-    subtitle = paste0(
-      "Showing the <b><span style='color:", my_colors["max"], ";'>most</span></b> ",
-      "and <b><span style='color:", my_colors["min"], ";'>least</span> </b>",
-      "CEI-diverse team for common CV values<br>&nbsp;"
-    )
+      subtitle = paste0(
+        "Showing the <b><span style='color:", my_colors["max"], ";'>most</span></b> ",
+        "and <b><span style='color:", my_colors["min"], ";'>least</span></b> ",
+        "CEI-diverse team for selected CV values (±0.025)"
+      ),
+      caption = "Each dot represents one team member's age (20-70)."
     ) +
-      scale_fill_manual(values = my_colors) +
-  scale_color_manual(values = my_colors) 
+    scale_fill_manual(values = my_colors) +
+    scale_color_manual(values = my_colors)
 
-
+    p_div_cv
 ```
 
+```{r cv_cei_breakdown}
+# Create a table showing CEI components for the 12 teams shown in the CV chart
+
+# Get unique team data (one row per team/score_type combination)
+cv_table_data <- outliers %>%
+  # Keep only specific CV bins (matching the chart)
+  filter(CV %in% c(0.1, 0.2, 0.25, 0.3, 0.4, 0.5)) %>%
+  select(CV, CEI, group_members, score_type) %>%
+  distinct() %>%
+  arrange(CV, desc(score_type))
+
+# Calculate C and E components for each team
+cv_table_data <- cv_table_data %>%
+  rowwise() %>%
+  mutate(
+    ages = list(line_to_vector(group_members, return = "vector") %>% as.numeric()),
+    C = compute_CEI(ages, range = c(20, 70), return = "C"),
+    E = compute_CEI(ages, range = c(20, 70), return = "E"),
+    .keep = "unused"
+  ) %>%
+  ungroup() %>%
+  mutate(
+    CV_Group = as.character(CV),
+    Type = ifelse(score_type == "max", "High CEI", "Low CEI"),
+    CEI = round(CEI, 3),
+    C = round(C, 3),
+    E = round(E, 3)
+  ) %>%
+  select(CV_Group, Type, CEI, C, E) %>%
+  group_by(CV_Group) %>%
+  arrange(desc(Type), .by_group = TRUE)
+
+# Create gt table
+cv_table_data %>%
+  gt(groupname_col = "CV_Group") %>%
+  tab_header(
+    title = "Coverage & Evenness Index (CEI) Components",
+    subtitle = "Broken down by Coverage (C) and Evenness (E) for the 12 teams shown in CV divergence chart"
+  ) %>%
+  cols_label(
+    Type = "Type",
+    CEI = "CEI",
+    C = "Coverage (C)",
+    E = "Evenness (E)"
+  ) %>%
+  fmt_number(
+    columns = c(CEI, C, E),
+    decimals = 3
+  ) %>%
+  tab_options(
+    row_group.as_column = FALSE,
+    container.overflow.x = TRUE
+  )
+```
+
+```{r combined-plot, fig.width=12, fig.height=8}
+library(patchwork)
+(p_div_blau + labs(title = "")) + (p_div_cv + labs(title = "")) +
+  plot_layout(ncol = 2) + plot_annotation(tag_levels = 'A')
+```
 
 ## Summary
 
