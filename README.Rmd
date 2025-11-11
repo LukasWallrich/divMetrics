@@ -43,13 +43,12 @@ For continuous attributes (e.g., age, tenure), different metrics capture differe
 | Metric | Type | Description |
 |--------|------|-------------|
 | `compute_Blau()` | Variety | Blau's index with binning for continuous data |
-| `compute_cv()` | Separation | Coefficient of variation |
+| `compute_cv()` | Separation/Disparity | Coefficient of variation |
 | `compute_sd()` | Separation | Standard deviation |
 | `compute_GMD()` | Separation | Gini Mean Difference (mean pairwise absolute difference; continuous Rao analogue) |
 | `compute_CEI()` | Variety | Coverage and Evenness Index |
-| `compute_Rao()` | Variety | Rao's quadratic entropy (requires a category distance matrix `D`) |
 
-CEI captures coverage of a theoretical range together with within‑range evenness. Rao’s index is the expected dissimilarity between two random draws, implemented here for categorical attributes given a dissimilarity matrix. For continuous attributes, use `compute_GMD()` which equals the mean absolute difference (and is proportional to Rao with δ(a,b)=|a−b|).
+CEI captures coverage of a theoretical range together with within‑range evenness.
 
 ## Basic Usage
 
