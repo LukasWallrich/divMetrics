@@ -1,14 +1,10 @@
 ---
 title: "Comparing metrics for continuous attributes"
-output: 
+output:
   rmarkdown::html_document:
     toc: true
     toc_depth: 2
     code_folding: hide
-vignette: >
-  %\VignetteIndexEntry{Comparing metrics for continuous attributes}
-  %\VignetteEngine{knitr::rmarkdown}
-  %\VignetteEncoding{UTF-8}
 ---
 
 ```{r, include = FALSE}
@@ -31,7 +27,6 @@ library(tidyr)
 library(gt)  # For tables
 
 # Load internal helper functions
-# (replacements for timesaveR functions, see https://lukaswallrich.github.io/timesaveR/)
 cor_matrix <- divMetrics:::cor_matrix
 report_cor_table <- divMetrics:::report_cor_table
 line_to_vector <- divMetrics:::line_to_vector
@@ -56,13 +51,12 @@ To generate teams with a full spectrum of diversity, we use a hybrid approach wh
 ```{r generate-teams, message=FALSE}
 set.seed(123)  # Set seed for reproducibility
 
-# Generate teams with varying diversity levels using a simpler structural approach
-# The diversity parameter (p) influences team structure and spread, but is not directly coupled to metrics
+# Generate teams with varying diversity levels
+# The diversity parameter (p) influences team structure and spread
 # - For unimodal teams: normal distribution around a random center; width scales with p
 # - For bimodal teams: two normal clusters with separation/width scaled by p; split can vary (~50/50 ± 15%)
 # - For core_outlier: tight core + 1 far outlier; offset scales with p
-# This avoids overfitting to metric logic and produces more natural variation
-generate_team_simple <- function(size, n_teams, bounds = c(20, 70), alpha = 1, beta = 1) {
+generate_team <- function(size, n_teams, bounds = c(20, 70), alpha = 1, beta = 1) {
   span <- diff(bounds)
   clamp <- function(x) pmin(pmax(x, bounds[1]), bounds[2])
   rnorm_clamped <- function(n, mean, sd) round(clamp(rnorm(n, mean, sd)))
@@ -74,7 +68,7 @@ generate_team_simple <- function(size, n_teams, bounds = c(20, 70), alpha = 1, b
     p <- p_div[i]
     center <- runif(1, bounds[1], bounds[2])
 
-    # Simple shape choice: low p → unimodal; higher p → mix
+    # Shape choice: low p → unimodal; higher p → mix
     if (p < 0.30) {
       type <- "unimodal"
     } else {
@@ -116,8 +110,8 @@ generate_team_simple <- function(size, n_teams, bounds = c(20, 70), alpha = 1, b
 }
 
 # Create teams of size 5 and 10 with controlled diversity
-teams_size_5 <- generate_team_simple(5, 2500)
-teams_size_10 <- generate_team_simple(10, 2500)
+teams_size_5 <- generate_team(5, 2500)
+teams_size_10 <- generate_team(10, 2500)
 
 # Combine all teams
 teams <- bind_rows(teams_size_5, teams_size_10)

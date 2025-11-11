@@ -5,10 +5,6 @@ output:
     toc: true
     toc_depth: 2
     code_folding: hide
-vignette: >
-  %\VignetteIndexEntry{statistical_power}
-  %\VignetteEngine{knitr::rmarkdown}
-  %\VignetteEncoding{UTF-8}
 ---
 
 ```{r, include = FALSE}
@@ -22,15 +18,17 @@ knitr::opts_chunk$set(
 
 ```{r setup}
 library(divMetrics)
-library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(purrr)
+library(forcats)
 library(scales)
 library(gt)
-
 library(pwr)
-
 library(furrr)
 library(progressr)
-plan(multisession) 
+plan(multisession)
 ```
 
 ## Introduction
@@ -131,106 +129,59 @@ team_hill_climb <- function(team_starts, landscape) {
   max(peaks)
 }
 
-# Generate teams with varying diversity levels
-# Uses a hybrid approach where the diversity parameter (p) continuously controls team composition:
-# - For unimodal teams: p directly controls the width of the age distribution (2 to 50 years)
-# - For bimodal teams: p controls separation between clusters and cluster widths
-# - For skewed teams: p controls cluster widths
-# This creates a smooth continuum of diversity rather than discrete types
-# Using Beta(1,1) provides a uniform distribution across the full diversity range
-generate_team <- function(size, n_teams, alpha = 1, beta = 1) {
-  ages <- seq(20, 70, by = 1)
-  max_range <- max(ages) - min(ages)
-  diversity_prop <- rbeta(n_teams, alpha, beta)
+## Generate teams with varying diversity levels
+# The diversity parameter (p) influences team structure and spread
+# - For unimodal teams: normal distribution around a random center; width scales with p
+# - For bimodal teams: two normal clusters with separation/width scaled by p; split can vary (~50/50 ± 15%)
+# - For core_outlier: tight core + 1 far outlier; offset scales with p
+generate_team <- function(size, n_teams, bounds = c(20, 70), alpha = 1, beta = 1) {
+  span <- diff(bounds)
+  clamp <- function(x) pmin(pmax(x, bounds[1]), bounds[2])
+  rnorm_clamped <- function(n, mean, sd) round(clamp(rnorm(n, mean, sd)))
+
+  p_div <- rbeta(n_teams, alpha, beta)  # diversity level in [0,1]
   teams_list <- vector("list", n_teams)
 
   for (i in seq_len(n_teams)) {
-    p <- diversity_prop[i]
+    p <- p_div[i]
+    center <- runif(1, bounds[1], bounds[2])
 
-    # Decide on team composition type based on diversity parameter
-    # Low diversity (p < 0.3): always unimodal
-    # Higher diversity: mix of unimodal, bimodal, and skewed
-    if (p < 0.3) {
-      composition_type <- "unimodal"
+    # Shape choice: low p → unimodal; higher p → mix
+    if (p < 0.30) {
+      type <- "unimodal"
     } else {
-      composition_type <- sample(
-        c("unimodal", "bimodal", "skewed"),
-        size = 1,
-        prob = c(0.4, 0.4, 0.2) 
-      )
+      type <- sample(c("unimodal", "bimodal", "core_outlier"),
+                     size = 1, prob = c(0.4, 0.3, 0.3))
     }
 
-    if (composition_type == "unimodal") {
-      # Use p to continuously control width
-      # p=0 -> very narrow (±1 year), p=1 -> full range (50 years)
-      width <- 2 + p * (max_range - 2)
+    if (type == "unimodal") {
+      # Width scales with p; normal draw adds natural clumpiness
+      sd <- 0.8 + 10 * p
+      ages <- rnorm_clamped(size, center, sd)
 
-      center <- sample(ages, 1)
-      min_age <- pmax(min(ages), center - width/2)
-      max_age <- pmin(max(ages), center + width/2)
+    } else if (type == "bimodal") {
+      # Separation grows with p; clusters narrower when far apart
+      sep <- 6 + 24 * p
+      sd <- 1 + 4 * (1 - p)
+      w <- 0.5 + runif(1, -0.15, 0.15)      # ~50/50 but not exact
+      n1 <- max(1, round(size * w)); n2 <- max(1, size - n1)
+      if (n1 + n2 > size) { if (runif(1) < 0.5) n1 <- n1 - 1 else n2 <- n2 - 1 }
+      c1 <- clamp(center - sep/2); c2 <- clamp(center + sep/2)
+      ages <- c(rnorm_clamped(n1, c1, sd), rnorm_clamped(n2, c2, sd))
 
-      team_ages <- round(runif(size, min = min_age, max = max_age))
-
-    } else if (composition_type == "bimodal") {
-      # Two clusters with separation proportional to p
-      separation <- 10 + p * 30  # 10-40 years apart
-
-      low_center <- sample(ages[ages <= 45], 1)
-      high_center <- pmin(max(ages), low_center + separation)
-
-      # Width of each cluster inversely related to p (more separation = narrower clusters)
-      cluster_width <- 3 + (1-p) * 5
-
-      # Split team between clusters
-      n_low <- ceiling(size / 2)
-      n_high <- size - n_low
-
-      low_ages <- round(runif(n_low,
-                             max(min(ages), low_center - cluster_width),
-                             min(max(ages), low_center + cluster_width)))
-      high_ages <- round(runif(n_high,
-                              max(min(ages), high_center - cluster_width),
-                              min(max(ages), high_center + cluster_width)))
-
-      team_ages <- c(low_ages, high_ages)
-
-    } else {  # skewed
-      # Dominant cluster (75%) + minority cluster (25%)
-      dominant_center <- sample(ages, 1)
-
-      # Minority is far from dominant
-      minority_candidates <- ages[abs(ages - dominant_center) >= 15]
-      if (length(minority_candidates) == 0) {
-        minority_center <- ifelse(dominant_center < 45,
-                                 sample(ages[ages >= 55], 1),
-                                 sample(ages[ages <= 35], 1))
-      } else {
-        minority_center <- sample(minority_candidates, 1)
-      }
-
-      # Cluster widths proportional to p
-      cluster_width <- 2 + p * 5
-
-      n_dominant <- ceiling(size * 0.75)
-      n_minority <- size - n_dominant
-
-      dominant_ages <- round(runif(n_dominant,
-                                  max(min(ages), dominant_center - cluster_width),
-                                  min(max(ages), dominant_center + cluster_width)))
-      minority_ages <- round(runif(n_minority,
-                                  max(min(ages), minority_center - cluster_width),
-                                  min(max(ages), minority_center + cluster_width)))
-
-      team_ages <- c(dominant_ages, minority_ages)
+    } else { # core_outlier: tight core + 1 far member
+      n_core <- size - 1
+      sd_core <- 0.8 + 2 * p
+      core <- rnorm_clamped(n_core, center, sd_core)
+      offset <- sample(c(-1, 1), 1) * (12 + 18 * p)
+      outlier <- rnorm_clamped(1, center + offset, sd = 1.5)
+      ages <- c(core, outlier)
     }
-
-    # Ensure all ages are within bounds
-    team_ages <- pmax(pmin(team_ages, max(ages)), min(ages))
 
     teams_list[[i]] <- tibble(team_id = paste0("Team_", size, "_", i),
-                              age = team_ages,
+                              age = ages,
                               team_size = size,
-                              diversity_profile = composition_type,
+                              diversity_profile = type,
                               diversity_prop = p)
   }
   dplyr::bind_rows(teams_list)
