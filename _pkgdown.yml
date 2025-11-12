@@ -3,22 +3,6 @@ template:
   bootstrap: 5
   bootswatch: cosmo
 
-build:
-  extra_packages:
-    - forcats
-    - furrr
-    - GGally
-    - ggplot2
-    - ggrepel
-    - ggtext
-    - gridExtra
-    - gt
-    - progressr
-    - purrr
-    - pwr
-    - scales
-    - viridis
-
 navbar:
   structure:
     left:  [home, reference, articles, news]
