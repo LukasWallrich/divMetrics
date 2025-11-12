@@ -20,8 +20,6 @@ Suggests:
     pkgdown,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
-Config/Needs/website: forcats, furrr, GGally, ggplot2, ggrepel, 
-    ggtext, gridExtra, gt, progressr, purrr, pwr, scales, viridis
 Imports:
     dplyr,
     magrittr,
