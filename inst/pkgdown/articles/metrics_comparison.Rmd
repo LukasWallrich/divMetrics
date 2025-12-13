@@ -38,6 +38,7 @@ library(tidyr)
 library(gt)  # For tables
 
 # Load internal helper functions
+# Note: These are internal functions accessed with ::: and are not part of the public API
 cor_matrix <- divMetrics:::cor_matrix
 report_cor_table <- divMetrics:::report_cor_table
 line_to_vector <- divMetrics:::line_to_vector

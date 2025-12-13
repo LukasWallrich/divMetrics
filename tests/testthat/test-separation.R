@@ -2,8 +2,11 @@ testthat::test_that("compute_cv returns correct coefficient and handles zero mea
   # For x = c(2, 4): mean = 3, sample sd = sqrt(2)=1.4142136, CV ~ 0.4714045.
   result <- compute_cv(c(2, 4), na.rm = TRUE)
   testthat::expect_equal(result, 1.4142136 / 3, tolerance = 1e-6)
-  # For x with zero mean, expect NA.
-  testthat::expect_true(is.na(compute_cv(c(0, 0, 0), na.rm = TRUE)))
+  # For x with zero mean, expect NA and a warning.
+  testthat::expect_warning(
+    testthat::expect_true(is.na(compute_cv(c(0, 0, 0), na.rm = TRUE))),
+    "Mean is zero"
+  )
 })
 
 testthat::test_that("compute_sd returns correct standard deviation", {

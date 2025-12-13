@@ -19,7 +19,7 @@ create_bins <- function(x, bin_width = NULL, bins = NULL, return_midpoints = FAL
     stop("Either bin_width or bins must be provided.")
   }
   if (return_midpoints) {
-    midpoints <- head(breaks, -1) + diff(breaks) / 2
+    midpoints <- utils::head(breaks, -1) + diff(breaks) / 2
     list(breaks = breaks, midpoints = midpoints)
   } else {
     breaks
@@ -55,6 +55,7 @@ remove_na <- function(x, group = NULL, na.rm = FALSE) {
 #' @examples
 #' report_teams(c("A", "B", "C", "A", "A", "A"), c(1,1,1,2,2,2))
 #' report_teams(c(1,2,3,4), c(2,2,1,1))
+#' @keywords internal
 
 report_teams <- function(attribute, team) {
   if (length(attribute) != length(team)) {
@@ -66,7 +67,7 @@ report_teams <- function(attribute, team) {
   } else {
     ord <- levels(team)
   }
-  setNames(sapply(ord, function(t) paste(attribute[team == t], collapse = ", ")), ord)
+  stats::setNames(sapply(ord, function(t) paste(attribute[team == t], collapse = ", ")), ord)
 }
 
 #' Parse Line to Vector
@@ -106,7 +107,7 @@ line_to_vector <- function(x, return = "vector") {
 #' @keywords internal
 cor_matrix <- function(x) {
   # Calculate correlation matrix
-  cor_mat <- cor(x, use = "complete.obs")
+  cor_mat <- stats::cor(x, use = "complete.obs")
 
   # Store the original data for later use in report_cor_table
   attr(cor_mat, "data") <- x
@@ -145,7 +146,7 @@ report_cor_table <- function(x) {
 
   # Descriptives and meta
   means <- colMeans(data, na.rm = TRUE)
-  sds <- apply(data, 2, sd, na.rm = TRUE)
+  sds <- apply(data, 2, stats::sd, na.rm = TRUE)
   n <- nrow(data)
   var_names <- colnames(x)
   n_vars <- length(var_names)
@@ -163,7 +164,7 @@ report_cor_table <- function(x) {
     col_vals <- character(n_vars)
     for (i in seq_len(n_vars)) {
       if (i == j) {
-        col_vals[i] <- "—"
+        col_vals[i] <- "-"
       } else if (i < j) {
         # upper triangle -> leave blank
         col_vals[i] <- ""

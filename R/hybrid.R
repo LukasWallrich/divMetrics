@@ -126,6 +126,10 @@ compute_CEI <- function(x, group = NULL, range = NULL, na.rm = FALSE, return = "
 
   if (is.null(range)) {
     range <- range(x, na.rm = TRUE)
+    if (diff(range) == 0) {
+      warning("Observed range is zero; CEI components will be zero.")
+      return(0)
+    }
     if (verbose) {
       message("Using observed range: c(", paste(range, collapse = ", "), ")")
     }

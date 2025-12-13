@@ -54,7 +54,7 @@ reference:
       - report_teams
 
 articles:
-  - title: "Vignettes"
+  - title: "Articles"
     contents:
     - metrics_comparison
     - statistical_power
