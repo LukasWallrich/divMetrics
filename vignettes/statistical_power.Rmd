@@ -5,14 +5,21 @@ output:
     toc: true
     toc_depth: 2
     code_folding: hide
+  rmarkdown::pdf_document:
+    toc: true
+    toc_depth: 2
 ---
 
 ```{r, include = FALSE}
+# Detect output format
+is_pdf <- knitr::is_latex_output()
+
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
   cache = TRUE,
-  cache.lazy = FALSE
+  cache.lazy = FALSE,
+  echo = !is_pdf  # Hide code in PDF, show in HTML
 )
 ```
 
@@ -29,6 +36,13 @@ library(pwr)
 library(furrr)
 library(progressr)
 plan(multisession)
+```
+
+```{r pdf-note, echo=FALSE, results='asis', eval=is_pdf}
+cat("\\textbf{Note:} This PDF document presents results without code. ",
+    "The complete R code is available in the R Markdown source file ",
+    "(\\texttt{statistical\\_power.Rmd}) and in the HTML version ",
+    "of this vignette.\n\n")
 ```
 
 ## Introduction
@@ -50,33 +64,55 @@ Each simulated team explores a landscape of 50 positions, matching the 50-year a
 ```{r}
 #--- Simulation setup ---
 ## Generate landscape of a given length and smoothness
-# The smooth_window parameter controls how "smooth" or "rugged" the landscape is:
-# - Lower values (e.g., 1-2) create a more rugged landscape with many local peaks
-# - Higher values (e.g., 6-8) create a smoother landscape with fewer, broader peaks
-# In Hong & Page's model, smoother landscapes reduce the advantage of diversity
-# The default n = 50 matches the 50-year age range (20-70) used for team generation
+# The smooth_window parameter controls how "smooth" or "rugged" the
+# landscape is:
+# - Lower values (e.g., 1-2) create a more rugged landscape with many
+#   local peaks
+# - Higher values (e.g., 6-8) create a smoother landscape with fewer,
+#   broader peaks
+# In Hong & Page's model, smoother landscapes reduce the advantage of
+# diversity
+# The default n = 50 matches the 50-year age range (20-70) used for
+# team generation
 # Uses circular/wrap-around smoothing to avoid edge artifacts
-# add_gradient: If TRUE, adds a macro-scale structure (linear/quadratic/none) where
-#               some regions systematically have higher peaks than others. This ensures
-#               that team coverage matters - diverse teams can reach regions that
-#               homogeneous teams cannot.
-# gradient_weight: Controls the relative contribution of macro gradient vs micro ruggedness.
-#                  0 = pure rugged landscape, 1 = pure gradient, 0.3 = balanced mix
-#                  keeping it moderate (0.2-0.4) maintains r ≈ 0.2 effect sizes.
-generate_landscape <- function(n, lower = 0, upper = 100, smooth_window = 3,
-                              add_gradient = TRUE, gradient_weight = 0.3) {
+# add_gradient: If TRUE, adds a macro-scale structure
+#   (linear/quadratic/none) where some regions systematically have
+#   higher peaks than others. This ensures that team coverage matters -
+#   diverse teams can reach regions that homogeneous teams cannot.
+# gradient_weight: Controls the relative contribution of macro gradient
+#   vs micro ruggedness. 0 = pure rugged landscape, 1 = pure gradient,
+#   0.3 = balanced mix. Keeping it moderate (0.2-0.4) maintains
+#   r ≈ 0.2 effect sizes.
+generate_landscape <- function(n,
+                               lower = 0,
+                               upper = 100,
+                               smooth_window = 3,
+                               add_gradient = TRUE,
+                               gradient_weight = 0.3) {
 
   # Generate local ruggedness with circular smoothing
   local_noise <- runif(n, min = lower, max = upper)
   pad_size <- floor(smooth_window / 2)
-  circular_points <- c(local_noise[(n - pad_size + 1):n], local_noise, local_noise[1:pad_size])
-  smooth_circular <- stats::filter(circular_points, rep(1/smooth_window, smooth_window), sides = 2)
+  circular_points <- c(
+    local_noise[(n - pad_size + 1):n],
+    local_noise,
+    local_noise[1:pad_size]
+  )
+  smooth_circular <- stats::filter(
+    circular_points,
+    rep(1 / smooth_window, smooth_window),
+    sides = 2
+  )
   micro <- as.numeric(smooth_circular[(pad_size + 1):(pad_size + n)])
 
   # Add macro-scale gradient (non-circular to preserve structure)
   if (add_gradient) {
     # Randomly choose gradient type for each landscape
-    gradient_type <- sample(c("linear", "quadratic", "none"), 1, prob = c(0.4, 0.4, 0.2))
+    gradient_type <- sample(
+      c("linear", "quadratic", "none"),
+      1,
+      prob = c(0.4, 0.4, 0.2)
+    )
 
     if (gradient_type == "linear") {
       # Linear gradient: one side systematically better than the other
@@ -85,7 +121,8 @@ generate_landscape <- function(n, lower = 0, upper = 100, smooth_window = 3,
     } else if (gradient_type == "quadratic") {
       # Quadratic: middle or edges systematically better
       x <- seq(-1, 1, length.out = n)
-      shape <- sample(c(1, -1), 1)  # parabola up (edges better) or down (middle better)
+      # Parabola up (edges better) or down (middle better)
+      shape <- sample(c(1, -1), 1)
       macro <- shape * x^2
     } else {
       # No gradient - flat structure
@@ -108,10 +145,12 @@ generate_landscape <- function(n, lower = 0, upper = 100, smooth_window = 3,
   as.numeric(landscape)
 }
 
-# Hill climbing: each agent moves to adjacent positions that improve their score
-# until reaching a local maximum (peak)
+# Hill climbing: each agent moves to adjacent positions that improve
+# their score until reaching a local maximum (peak)
 hill_climb <- function(start, landscape) {
-  if (start > length(landscape) || start < 1) stop("Starting position out of bounds.")
+  if (start > length(landscape) || start < 1) {
+    stop("Starting position out of bounds.")
+  }
   pos <- start
   repeat {
     left_val <- if (pos > 1) landscape[pos - 1] else -Inf
@@ -130,84 +169,112 @@ team_hill_climb <- function(team_starts, landscape) {
 }
 
 ## Generate teams with varying diversity levels
-# The diversity parameter (p) influences team structure and spread
-# - For unimodal teams: normal distribution around a random center; width scales with p
-# - For bimodal teams: two normal clusters with separation/width scaled by p; split can vary (~50/50 ± 15%)
-# - For core_outlier: tight core + 1 far outlier; offset scales with p
-generate_team <- function(size, n_teams, bounds = c(20, 70), alpha = 1, beta = 1) {
-  span <- diff(bounds)
-  clamp <- function(x) pmin(pmax(x, bounds[1]), bounds[2])
-  rnorm_clamped <- function(n, mean, sd) round(clamp(rnorm(n, mean, sd)))
+generate_team <- function(size,
+                          n_teams,
+                          bounds = c(20, 70),
+                          p_two_cluster = 0.3,
+                          width_shape1 = 1,
+                          width_shape2 = 1) {
+  min_age   <- bounds[1]
+  max_age   <- bounds[2]
+  total_span <- max_age - min_age
 
-  p_div <- rbeta(n_teams, alpha, beta)  # diversity level in [0,1]
-  teams_list <- vector("list", n_teams)
+  clamp_round <- function(x) {
+    round(pmin(pmax(x, min_age), max_age))
+  }
+
+  teams <- vector("list", n_teams)
 
   for (i in seq_len(n_teams)) {
-    p <- p_div[i]
-    center <- runif(1, bounds[1], bounds[2])
 
-    # Shape choice: low p → unimodal; higher p → mix
-    if (p < 0.30) {
-      type <- "unimodal"
+    # 1. Draw a width (span) on [0, total_span]
+    # Mostly narrow, some wide
+    width_prop <- rbeta(1, width_shape1, width_shape2)
+    # At least 1 year
+    width <- max(1, width_prop * total_span)
+
+    # 2. Place that interval somewhere within [min_age, max_age]
+    start <- runif(1, min_age, max_age - width)
+    low   <- start
+    high  <- start + width
+
+    # 3. Decide on unimodal vs two-cluster
+    two_cluster <- runif(1) < p_two_cluster
+
+    if (!two_cluster) {
+      ages <- runif(size, low, high)
+      shape <- "unimodal"
+
     } else {
-      type <- sample(c("unimodal", "bimodal", "core_outlier"),
-                     size = 1, prob = c(0.4, 0.3, 0.3))
+      # Two clusters with flexible relative sizes and separation
+      # Cluster sizes vary; extreme splits produce "outlier-like" teams
+      # Encourages unequal splits
+      w  <- rbeta(1, 0.8, 0.8)
+      n1 <- max(1, round(size * w))
+      n2 <- max(1, size - n1)
+      if (n1 + n2 > size) {
+        if (runif(1) < 0.5) n1 <- n1 - 1 else n2 <- n2 - 1
+      }
+
+      # Position clusters inside the span
+      # c1 somewhere in the left part, c2 somewhere in the right part
+      c1 <- runif(1, low + 0.1 * (high - low), low + 0.4 * (high - low))
+      c2 <- runif(1, low + 0.6 * (high - low), low + 0.9 * (high - low))
+
+      # Cluster SD scales with width (tighter for small spans)
+      sd_cluster <- 0.1 * (high - low)
+
+      ages <- c(
+        rnorm(n1, c1, sd_cluster),
+        rnorm(n2, c2, sd_cluster)
+      )
+
+      shape <- "two_cluster"
     }
+    ages <- clamp_round(ages)
 
-    if (type == "unimodal") {
-      # Width scales with p; normal draw adds natural clumpiness
-      sd <- 0.8 + 10 * p
-      ages <- rnorm_clamped(size, center, sd)
-
-    } else if (type == "bimodal") {
-      # Separation grows with p; clusters narrower when far apart
-      sep <- 6 + 24 * p
-      sd <- 1 + 4 * (1 - p)
-      w <- 0.5 + runif(1, -0.15, 0.15)      # ~50/50 but not exact
-      n1 <- max(1, round(size * w)); n2 <- max(1, size - n1)
-      if (n1 + n2 > size) { if (runif(1) < 0.5) n1 <- n1 - 1 else n2 <- n2 - 1 }
-      c1 <- clamp(center - sep/2); c2 <- clamp(center + sep/2)
-      ages <- c(rnorm_clamped(n1, c1, sd), rnorm_clamped(n2, c2, sd))
-
-    } else { # core_outlier: tight core + 1 far member
-      n_core <- size - 1
-      sd_core <- 0.8 + 2 * p
-      core <- rnorm_clamped(n_core, center, sd_core)
-      offset <- sample(c(-1, 1), 1) * (12 + 18 * p)
-      outlier <- rnorm_clamped(1, center + offset, sd = 1.5)
-      ages <- c(core, outlier)
-    }
-
-    teams_list[[i]] <- tibble(team_id = paste0("Team_", size, "_", i),
-                              age = ages,
-                              team_size = size,
-                              diversity_profile = type,
-                              diversity_prop = p)
+    teams[[i]] <- tibble(
+      team_id           = paste0("Team_", size, "_", i),
+      age               = ages,
+      team_size         = size,
+      diversity_profile = shape,
+      diversity_prop    = width_prop
+    )
   }
-  dplyr::bind_rows(teams_list)
+
+  dplyr::bind_rows(teams)
 }
+
+
 
 # Helper function to parse comma-separated string into numeric vector
 parse_members <- function(x) {
   as.numeric(unlist(strsplit(x, ",\\s*")))
 }
 
-#--- A helper function to run one "condition" (factorial cell) ---
 # Simulation function that returns detailed team scores
-# noise_factor: Controls the amount of random noise added to team performance.
-#              This represents other factors affecting performance beyond diversity
-#              (e.g., skills, resources, coordination, motivation). Higher values
-#              produce more realistic (smaller) effect sizes.
-run_simulation <- function(team_size, smooth_window, n_teams = 250, n_landscapes = 250,
-                          noise_factor = 2, teams = NULL) {
-    if (is.null(teams)) {
+# noise_factor: Controls the amount of random noise added to team
+#   performance. This represents other factors affecting performance
+#   beyond diversity (e.g., skills, resources, coordination,
+#   motivation). Higher values produce more realistic (smaller) effect
+#   sizes.
+run_simulation <- function(team_size,
+                          smooth_window,
+                          n_teams = 250,
+                          n_landscapes = 250,
+                          noise_factor = 2,
+                          teams = NULL) {
+  if (is.null(teams)) {
     teams <- generate_team(team_size, n_teams)
   }
   
   # Calculate diversity metrics per team
-  team_data <- compute_CEI(teams$age, group = teams$team_id,
-                           range = c(20, 70),
-                           return_df = TRUE) %>%
+  team_data <- compute_CEI(
+    teams$age,
+    group = teams$team_id,
+    range = c(20, 70),
+    return_df = TRUE
+  ) %>%
     rename(CEI = index_value) %>%
     left_join(
       teams %>%
@@ -227,16 +294,22 @@ run_simulation <- function(team_size, smooth_window, n_teams = 250, n_landscapes
     )
   
   # Simulate landscapes and team performance
-  landscapes <- map(1:n_landscapes, ~generate_landscape(n = 50, smooth_window = smooth_window))
+  landscapes <- map(
+    1:n_landscapes,
+    ~generate_landscape(n = 50, smooth_window = smooth_window)
+  )
 
   # Calculate a constant noise SD based on typical landscape variance
-  # Use the SD of raw unsmoothed landscapes to ensure constant noise across conditions
+  # Use the SD of raw unsmoothed landscapes to ensure constant noise
+  # across conditions
   constant_noise_sd <- sd(runif(50, min = 0, max = 100)) * noise_factor
 
-  peaks <- tibble(id = 1:(nrow(team_data) * length(landscapes)),
-                  team = NA_character_,
-                  result = NA_real_,
-                  landscape_id = NA_integer_)
+  peaks <- tibble(
+    id = 1:(nrow(team_data) * length(landscapes)),
+    team = NA_character_,
+    result = NA_real_,
+    landscape_id = NA_integer_
+  )
   i <- 1
   for (landscape_idx in seq_along(landscapes)) {
     landscape <- landscapes[[landscape_idx]]
@@ -257,9 +330,11 @@ run_simulation <- function(team_size, smooth_window, n_teams = 250, n_landscapes
       # Get raw peak from hill climbing
       peak_raw <- team_hill_climb(team_positions, landscape)
 
-      # Add constant noise to represent other factors affecting team performance
-      # (skills, resources, coordination, motivation, task-specific knowledge, etc.)
-      # Noise is constant across landscape types to ensure fair comparison
+      # Add constant noise to represent other factors affecting team
+      # performance (skills, resources, coordination, motivation,
+      # task-specific knowledge, etc.)
+      # Noise is constant across landscape types to ensure fair
+      # comparison
       peak <- peak_raw + rnorm(1, mean = 0, sd = constant_noise_sd)
 
       peaks[i, ] <- list(i, team, peak, landscape_idx)
@@ -267,10 +342,11 @@ run_simulation <- function(team_size, smooth_window, n_teams = 250, n_landscapes
     }
   }
   
-  # Standardise variance within each landscape so every landscape contributes equally (correlations are scale-invariant)
-  peaks <- peaks %>% 
-    group_by(landscape_id) %>% 
-    mutate(result = scale(result, center = FALSE)) %>% 
+  # Standardise variance within each landscape so every landscape
+  # contributes equally
+  peaks <- peaks %>%
+    group_by(landscape_id) %>%
+    mutate(result = scale(result, center = FALSE)) %>%
     ungroup()
   
   # Merge team diversity details
@@ -284,12 +360,17 @@ run_simulation <- function(team_size, smooth_window, n_teams = 250, n_landscapes
 
 ## Verify team generation produces full diversity range
 
-Before running the full simulation, let's verify that our team generation approach creates teams spanning the full range from minimal to maximal diversity:
+Before running the full simulation, we verify that the team generation approach creates teams spanning the full range from minimal to maximal diversity:
 
 ```{r diagnostic-diversity, fig.width=10, fig.height=4}
 # Generate a sample of teams to check diversity distribution
 set.seed(123)
-diagnostic_teams <- generate_team(size = 5, n_teams = 1000)
+diagnostic_teams <- generate_team(
+  size = 5,
+  n_teams = 1000,
+  width_shape1 = .8,
+  width_shape2 = .8
+)
 
 # Calculate CEI for diagnostic purposes
 diagnostic_diversity <- diagnostic_teams %>%
@@ -305,10 +386,17 @@ diagnostic_diversity <- diagnostic_teams %>%
 # Plot distribution of diversity scores
 p1 <- ggplot(diagnostic_diversity, aes(x = CEI)) +
   geom_histogram(bins = 30, fill = "steelblue", alpha = 0.7) +
-  labs(title = "Distribution of CEI across generated teams",
-       subtitle = paste0("Range: ", round(min(diagnostic_diversity$CEI), 3),
-                        " to ", round(max(diagnostic_diversity$CEI), 3)),
-       x = "Coverage & Evenness Index (CEI)", y = "Count") +
+  labs(
+    title = "Distribution of CEI across generated teams",
+    subtitle = paste0(
+      "Range: ",
+      round(min(diagnostic_diversity$CEI), 3),
+      " to ",
+      round(max(diagnostic_diversity$CEI), 3)
+    ),
+    x = "Coverage & Evenness Index (CEI)",
+    y = "Count"
+  ) +
   theme_minimal()
 
 # Plot range span distribution
@@ -327,13 +415,24 @@ cat("\nAge Range Summary:\n")
 print(summary(diagnostic_diversity$range_span))
 ```
 
-The diagnostic plots confirm that our team generation produces a good spread of diversity levels across the 20-70 age range, from very homogeneous teams (low CEI, narrow age range) to various diverse configurations including uniform, bimodal, and skewed teams (higher CEI values representing different patterns of age distribution).
+The diagnostic plots confirm that the team generation produces a good
+spread of diversity levels across the 20-70 age range, from very
+homogeneous teams (low CEI, narrow age range) to various diverse
+configurations including uniform, bimodal, and skewed teams (higher CEI
+values representing different patterns of age distribution).
 
 ## Run simulations
 
-The simulation systematically varies team size (5 vs 10) and landscape smoothness (3 vs 8) in a 2x2 factorial design. Each condition is replicated across multiple landscapes explored by multiple teams.
+The simulation systematically varies team size (5 vs 10) and landscape
+smoothness (3 vs 8) in a 2x2 factorial design. Each condition is
+replicated across multiple landscapes explored by multiple teams.
 
-**Note on computation time:** The simulation below runs 2,000,000 total team-landscape evaluations (1,000 teams x 500 landscapes x 1 run per team-landscape combination, across 4 conditions). With parallel processing, this takes approximately 20-25 minutes on a modern multi-core machine. Results are cached, so re-knitting the vignette will be much faster.
+**Note on computation time:** The simulation below runs 2,000,000 total
+team-landscape evaluations (1,000 teams x 500 landscapes x 1 run per
+team-landscape combination, across 4 conditions). With parallel
+processing, this takes approximately 20-25 minutes on a modern
+multi-core machine. Results are cached, so re-knitting the vignette will
+be much faster.
 
 ```{r run-simulation, cache=TRUE}
 set.seed(1234)
@@ -342,10 +441,11 @@ total_teams <- 1000        # Number of teams per condition
 total_landscapes <- 500    # Number of landscapes per condition
 chunks <- 50               # Split landscapes into chunks for progress tracking
 
-# Pre-generate teams for each condition combination (teams are generated once per condition)
+# Pre-generate teams for each condition combination
+# (teams are generated once per condition)
 pre_generated_teams <- expand.grid(
   team_size = c(5, 10),
-  smooth_window = c(2, 8)
+  smooth_window = c(3, 8)
 ) %>%
   as_tibble() %>%
   mutate(teams = purrr::map(team_size, ~ generate_team(.x, total_teams)))
@@ -355,25 +455,39 @@ conditions <- expand.grid(
   team_size = c(5, 10),
   smooth_window = c(3, 8)
 ) %>%
-  slice(rep(1:n(), each = chunks)) %>%
-  mutate(chunk = rep(1:chunks, times = nrow(expand.grid(team_size = c(5, 10), smooth_window = c(2, 8))))) %>%
+  slice(rep(seq_len(n()), each = chunks)) %>%
+  mutate(
+    chunk = rep(
+      1:chunks,
+      times = nrow(expand.grid(
+        team_size = c(5, 10),
+        smooth_window = c(3, 8)
+      ))
+    )
+  ) %>%
   left_join(pre_generated_teams, by = c("team_size", "smooth_window"))
 
-# Run simulations in parallel over conditions, passing pre-generated teams into run_simulation
+# Run simulations in parallel over conditions, passing pre-generated
+# teams into run_simulation
 results <- with_progress({
   p <- progressr::progressor(steps = nrow(conditions))
   furrr::future_pmap_dfr(
     conditions,
     function(team_size, smooth_window, chunk, teams) {
-      sim_data <- run_simulation(team_size, smooth_window, 
-                                 n_teams = total_teams, 
-                                 n_landscapes = ceiling(total_landscapes/chunks),
-                                 teams = teams)
-      p()  # update progress after each simulation run
-      sim_data %>% 
-        dplyr::mutate(team_size = team_size,
-                      smooth_window = smooth_window,
-                      chunk = chunk)
+      sim_data <- run_simulation(
+        team_size,
+        smooth_window,
+        n_teams = total_teams,
+        n_landscapes = ceiling(total_landscapes / chunks),
+        teams = teams
+      )
+      p()  # Update progress after each simulation run
+      sim_data %>%
+        dplyr::mutate(
+          team_size = team_size,
+          smooth_window = smooth_window,
+          chunk = chunk
+        )
     },
     .options = furrr::furrr_options(seed = TRUE)
   )
@@ -390,10 +504,9 @@ results <- results %>%
 
 ## Estimating the effects
 
-We estimate effect sizes and power using a **realistic study design** where each team's performance is averaged across approximately 10 different tasks or measurement occasions. To stabilise Monte Carlo error we draw 200 bootstrap replications per condition. Each replication:
+We estimate effect sizes and power by averaging team performance across 10 different landscapes, which could reflect a typical study where team performance is measured over time or with multiple items. Specifically, the simulation
 
-1. Randomly samples 10 landscapes (with replacement) from the 500 simulated per condition
-2. Averages each team's performance across those 10 landscapes
+2. Averages each team's performance across 10 landscapes
 3. Computes the correlation between diversity and performance across the full team sample
 4. Contributes one estimate to the distribution summarised below
 
@@ -475,7 +588,7 @@ summary_corr <- replication_corr %>%
 summary_corr
 ```
 
-Let's create a clear summary table showing effect sizes and required sample sizes:
+Table 1 presents the effect sizes and required sample sizes for each metric and condition:
 
 ```{r summary-table}
 summary_table <- summary_corr %>%
@@ -519,7 +632,7 @@ summary_table %>%
   )
 ```
 
-Now let's calculate specific statistics for the paper, including comparisons at the median meta-analytic sample size (N=103):
+Specific statistics comparing metrics at the median meta-analytic sample size (N=103) are calculated below:
 
 ```{r paper-statistics}
 # Calculate power at N=103 for each metric and condition
@@ -527,36 +640,45 @@ power_at_103 <- summary_corr %>%
   mutate(power_at_103 = safe_power(mean_r, n = 103)) %>%
   arrange(team_size, smooth_window, desc(power_at_103))
 
-# Print results
-cat("Statistical Power at N=103 (median from meta-analysis):\n")
-cat(strrep("=", 60), "\n\n")
+# Create a formatted table for power at N=103
+power_table <- power_at_103 %>%
+  mutate(
+    Condition = paste0(
+      "Team size ", team_size, ", Smoothness ", smooth_window
+    )
+  ) %>%
+  select(Condition, metric, power_at_103, mean_n_req_80) %>%
+  arrange(Condition, desc(power_at_103))
 
-for (ts in unique(power_at_103$team_size)) {
-  for (sw in unique(power_at_103$smooth_window)) {
-    condition_data <- power_at_103 %>%
-      filter(team_size == ts, smooth_window == sw) %>%
-      arrange(desc(power_at_103))
-
-    cat(sprintf("\nTeam size %d, Landscape smoothness %d:\n", ts, sw))
-    for (i in 1:nrow(condition_data)) {
-      power_str <- ifelse(is.na(condition_data$power_at_103[i]),
-                          "NA",
-                          sprintf("%.1f%%", condition_data$power_at_103[i] * 100))
-      n80_str <- ifelse(is.na(condition_data$mean_n_req_80[i]),
-                        "NA",
-                        sprintf("%.0f", condition_data$mean_n_req_80[i]))
-      cat(sprintf("  %15s: Power = %s, N for 80%% power = %s\n",
-                  condition_data$metric[i],
-                  power_str,
-                  n80_str))
-    }
-  }
+power_domain <- range(power_table$power_at_103, na.rm = TRUE)
+if (diff(power_domain) == 0) {
+  power_domain <- power_domain + c(-0.001, 0.001)
 }
+power_palette <- scales::col_numeric(
+  palette = c("#f7fbff", "#6baed6", "#08306b"),
+  domain = power_domain
+)
+
+power_table %>%
+  gt(groupname_col = "Condition") %>%
+  cols_hide(columns = Condition) %>%
+  tab_header(
+    title = md("**Statistical Power at N=103**"),
+    subtitle = "Median sample size from meta-analysis"
+  ) %>%
+  fmt_percent(columns = power_at_103, decimals = 1) %>%
+  fmt_number(columns = mean_n_req_80, decimals = 0) %>%
+  cols_label(
+    metric = "Metric",
+    power_at_103 = "Power at N=103",
+    mean_n_req_80 = "N for 80% power"
+  ) %>%
+  data_color(
+    columns = power_at_103,
+    colors = power_palette
+  )
 
 # Calculate CEI advantage
-cat("\n\nCEI Statistical Power Advantage:\n")
-cat(strrep("=", 60), "\n")
-
 cei_comparison <- power_at_103 %>%
   group_by(team_size, smooth_window) %>%
   summarise(
@@ -567,70 +689,83 @@ cei_comparison <- power_at_103 %>%
     Blau5_power = power_at_103[metric == "Blau_5"],
     Blau5_n_req_80 = mean_n_req_80[metric == "Blau_5"],
     .groups = "drop"
+  ) %>%
+  mutate(
+    cv_increase_pct = (CV_n_req_80 / CEI_n_req_80 - 1) * 100,
+    blau_increase_pct = (Blau5_n_req_80 / CEI_n_req_80 - 1) * 100,
+    power_gain_cv_pp = (CEI_power - CV_power) * 100,
+    power_gain_blau_pp = (CEI_power - Blau5_power) * 100
   )
-
-format_plain_n <- function(x) {
-  ifelse(is.na(x), "NA", sprintf("%.0f", x))
-}
-
-format_pct <- function(x) {
-  ifelse(is.na(x), "NA", sprintf("%.0f%%", x))
-}
-
-format_power <- function(x) {
-  ifelse(is.na(x), "NA", sprintf("%.1f%%", x * 100))
-}
-
-format_pp <- function(x) {
-  ifelse(is.na(x), "NA", sprintf("%.1f", x))
-}
-
-for (i in 1:nrow(cei_comparison)) {
-  cat(sprintf("\nTeam size %d, Smoothness %d:\n",
-              cei_comparison$team_size[i],
-              cei_comparison$smooth_window[i]))
-  cei_n <- cei_comparison$CEI_n_req_80[i]
-  cv_n <- cei_comparison$CV_n_req_80[i]
-  blau_n <- cei_comparison$Blau5_n_req_80[i]
-  cei_power <- cei_comparison$CEI_power[i]
-  cv_power <- cei_comparison$CV_power[i]
-
-  cv_reduction <- if (any(is.na(c(cei_n, cv_n)))) NA_real_ else (1 - cei_n/cv_n) * 100
-  blau_reduction <- if (any(is.na(c(cei_n, blau_n)))) NA_real_ else (1 - cei_n/blau_n) * 100
-  power_diff <- if (any(is.na(c(cei_power, cv_power)))) NA_real_ else (cei_power - cv_power) * 100
-
-  cat(sprintf("  CEI requires N=%s vs CV N=%s (%s fewer teams)\n",
-              format_plain_n(cei_n),
-              format_plain_n(cv_n),
-              format_pct(cv_reduction)))
-  cat(sprintf("  CEI requires N=%s vs Blau_5 N=%s (%s fewer teams)\n",
-              format_plain_n(cei_n),
-              format_plain_n(blau_n),
-              format_pct(blau_reduction)))
-  cat(sprintf("  At N=103: CEI power=%s vs CV power=%s (%s pp higher)\n",
-              format_power(cei_power),
-              format_power(cv_power),
-              format_pp(power_diff)))
-}
 
 # Calculate average advantage across conditions
 avg_cei_advantage <- cei_comparison %>%
   summarise(
-    avg_n_reduction_cv = mean(1 - CEI_n_req_80/CV_n_req_80, na.rm = TRUE) * 100,
-    avg_n_reduction_blau = mean(1 - CEI_n_req_80/Blau5_n_req_80, na.rm = TRUE) * 100,
-    avg_power_gain_cv = mean((CEI_power - CV_power) * 100, na.rm = TRUE)
+    avg_n_increase_cv = mean(cv_increase_pct, na.rm = TRUE),
+    avg_n_increase_blau = mean(blau_increase_pct, na.rm = TRUE),
+    avg_power_gain_cv = mean(power_gain_cv_pp, na.rm = TRUE),
+    avg_power_gain_blau = mean(power_gain_blau_pp, na.rm = TRUE),
+    min_power_gain_cv = min(power_gain_cv_pp, na.rm = TRUE),
+    max_power_gain_cv = max(power_gain_cv_pp, na.rm = TRUE),
+    min_power_gain_blau = min(power_gain_blau_pp, na.rm = TRUE),
+    max_power_gain_blau = max(power_gain_blau_pp, na.rm = TRUE),
+    max_n_increase_cv = max(cv_increase_pct, na.rm = TRUE),
+    max_n_increase_blau = max(blau_increase_pct, na.rm = TRUE)
   )
 
-cat("\n\nAverage CEI Advantage Across All Conditions:\n")
-cat(sprintf("  %.0f%% reduction in required sample size vs CV\n",
-            avg_cei_advantage$avg_n_reduction_cv))
-cat(sprintf("  %.0f%% reduction in required sample size vs Blau (5-year bins)\n",
-            avg_cei_advantage$avg_n_reduction_blau))
-cat(sprintf("  %.1f percentage point power gain vs CV at N=103\n",
-            avg_cei_advantage$avg_power_gain_cv))
+# Create advantage comparison table
+cei_advantage_table <- cei_comparison %>%
+  transmute(
+    Condition = paste0(
+      "Team size ", team_size, ", Smoothness ", smooth_window
+    ),
+    `CEI N (80%)` = CEI_n_req_80,
+    `CV N (80%)` = CV_n_req_80,
+    `CV N increase (%)` = cv_increase_pct,
+    `Blau N (80%)` = Blau5_n_req_80,
+    `Blau N increase (%)` = blau_increase_pct,
+    `CEI power gain vs CV (pp)` = power_gain_cv_pp,
+    `CEI power gain vs Blau (pp)` = power_gain_blau_pp
+  )
+
+cei_advantage_table %>%
+  gt() %>%
+  tab_header(
+    title = md("**CEI Statistical Power Advantage**"),
+    subtitle = "Comparison at N=103 and required sample sizes for 80% power"
+  ) %>%
+  fmt_number(
+    columns = c(`CEI N (80%)`, `CV N (80%)`, `Blau N (80%)`),
+    decimals = 0
+  ) %>%
+  fmt_number(
+    columns = c(
+      `CV N increase (%)`,
+      `Blau N increase (%)`,
+      `CEI power gain vs CV (pp)`,
+      `CEI power gain vs Blau (pp)`
+    ),
+    decimals = 1
+  ) %>%
+  tab_footnote(
+    footnote = "N increase (%) shows how many more teams are needed vs CEI",
+    locations = cells_column_labels(
+      columns = c(`CV N increase (%)`, `Blau N increase (%)`)
+    )
+  ) %>%
+  tab_footnote(
+    footnote = "Power gain (pp) shows advantage in percentage points at N=103",
+    locations = cells_column_labels(
+      columns = c(
+        `CEI power gain vs CV (pp)`,
+        `CEI power gain vs Blau (pp)`
+      )
+    )
+  )
 ```
 
-To check how stable the ordering is within each simulated study, we can examine metric differences per chunk:
+Across the four simulation conditions, at the empirical median sample size of 103 teams, CEI achieved `r round(avg_cei_advantage$min_power_gain_cv, 0)`-`r round(avg_cei_advantage$max_power_gain_cv, 0)` percentage points higher power than the coefficient of variation and `r round(avg_cei_advantage$min_power_gain_blau, 0)`-`r round(avg_cei_advantage$max_power_gain_blau, 0)` percentage points higher power than Blau's index with 5-year categories. Conversely, sample sizes would need to be up to `r round(avg_cei_advantage$max_n_increase_cv, 0)`% larger to achieve 80% power with the coefficient of variation, and up to `r round(avg_cei_advantage$max_n_increase_blau, 0)`% larger with Blau's index.
+
+To assess the stability of metric rankings within each simulated study, metric differences per chunk are examined:
 
 ```{r metric-differences}
 cei_by_chunk <- replication_corr %>%

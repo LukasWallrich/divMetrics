@@ -1,16 +1,27 @@
 ---
 title: "Comparing metrics for continuous attributes"
 output:
-  rmarkdown::html_document:
+  html_document:
     toc: true
     toc_depth: 2
     code_folding: hide
+  pdf_document:
+    latex_engine: xelatex
+    keep_tex: false
+classoption: oneside
+header-includes:
+  - \usepackage{fancyhdr}
+  - \pagestyle{fancy}
+  - \fancyhead[C]{\textit{Code available in Rmd source and HTML version}}
 ---
 
 ```{r, include = FALSE}
+is_pdf <- knitr::opts_knit$get("rmarkdown.pandoc.to") == "latex"
+
 knitr::opts_chunk$set(
   collapse = TRUE,
-  comment = "#>"
+  comment = "#>",
+  echo = !is_pdf  # Hide code in PDF, show in HTML
 )
 ```
 
@@ -35,78 +46,109 @@ line_to_vector <- divMetrics:::line_to_vector
 
 ## Introduction
 
-This analysis aims to calculate and compare five diversity scores for teams of size 5 and 10, drawn from an age distribution ranging from 20 to 70. We will use the following diversity measures:
+This analysis aims to calculate and compare diversity scores for teams of
+size 5 and 10, drawn from an age distribution ranging from 20 to 70. We will
+use the following diversity measures:
 
 #. Blau's Index with 5-year binning
 #. Blau's Index with 10-year binning
 #. Coefficient of Variation (CV)
 #. Standard Deviation (SD)
 #. Coverage & Evenness Index (CEI)
-#. Gini Mean Difference (GMD; continuous Rao equivalent)
 
 ## Generate Team Data
 
-To generate teams with a full spectrum of diversity, we use a hybrid approach where a continuous diversity parameter directly controls the width and spread of team compositions. This creates a smooth continuum from very homogeneous teams through moderate diversity to highly diverse teams including bimodal and skewed configurations. This aims to capture the range of team configurations observed empirically.
+```{r generate-teams-text, echo=FALSE, results='asis'}
+if (is_pdf) {
+  cat("Team diversity is generated using a hybrid approach where a continuous",
+      "diversity parameter directly controls the width and spread of team",
+      "compositions. This creates a smooth continuum from very homogeneous",
+      "teams (narrow age ranges of 2-3 years) through moderate diversity",
+      "(wider unimodal distributions) to highly diverse teams including",
+      "bimodal (two separated clusters) and skewed (unequal cluster sizes)",
+      "configurations. This approach ensures that the underlying diversity",
+      "parameter has a strong, direct relationship with measured diversity",
+      "while still capturing the range of team configurations observed",
+      "empirically.\n")
+}
+```
 
 ```{r generate-teams, message=FALSE}
 set.seed(123)  # Set seed for reproducibility
 
 # Generate teams with varying diversity levels
-# The diversity parameter (p) influences team structure and spread
-# - For unimodal teams: normal distribution around a random center; width scales with p
-# - For bimodal teams: two normal clusters with separation/width scaled by p; split can vary (~50/50 ± 15%)
-# - For core_outlier: tight core + 1 far outlier; offset scales with p
-generate_team <- function(size, n_teams, bounds = c(20, 70), alpha = 1, beta = 1) {
-  span <- diff(bounds)
-  clamp <- function(x) pmin(pmax(x, bounds[1]), bounds[2])
-  rnorm_clamped <- function(n, mean, sd) round(clamp(rnorm(n, mean, sd)))
+# width_prop controls span; teams can be unimodal or two-cluster
+generate_team <- function(size, n_teams, bounds = c(20, 70),
+                          p_two_cluster = 0.3,
+                          width_shape1 = 0.8, width_shape2 = 0.8) {
+  min_age   <- bounds[1]
+  max_age   <- bounds[2]
+  total_span <- max_age - min_age
 
-  p_div <- rbeta(n_teams, alpha, beta)  # diversity level in [0,1]
-  teams_list <- vector("list", n_teams)
+  clamp_round <- function(x) {
+    round(pmin(pmax(x, min_age), max_age))
+  }
+
+  teams <- vector("list", n_teams)
 
   for (i in seq_len(n_teams)) {
-    p <- p_div[i]
-    center <- runif(1, bounds[1], bounds[2])
 
-    # Shape choice: low p → unimodal; higher p → mix
-    if (p < 0.30) {
-      type <- "unimodal"
+    # 1. Draw a width (span) on [0, total_span]
+    # mostly narrow, some wide
+    width_prop <- rbeta(1, width_shape1, width_shape2)
+    width <- max(1, width_prop * total_span)  # at least 1 year
+
+    # 2. Place that interval somewhere within [min_age, max_age]
+    start <- runif(1, min_age, max_age - width)
+    low   <- start
+    high  <- start + width
+
+    # 3. Decide on unimodal vs two-cluster
+    two_cluster <- runif(1) < p_two_cluster
+
+    if (!two_cluster) {
+      ages <- runif(size, low, high)
+      shape <- "unimodal"
+
     } else {
-      type <- sample(c("unimodal", "bimodal", "core_outlier"),
-                     size = 1, prob = c(0.4, 0.3, 0.3))
+      # Two clusters with flexible relative sizes and separation
+      # Cluster sizes vary; extreme splits produce "outlier-like"
+      # teams naturally
+      # encourages unequal splits
+      w  <- rbeta(1, 0.8, 0.8)
+      n1 <- max(1, round(size * w))
+      n2 <- max(1, size - n1)
+      if (n1 + n2 > size) {
+        if (runif(1) < 0.5) n1 <- n1 - 1 else n2 <- n2 - 1
+      }
+
+      # Position clusters inside the span
+      # c1 somewhere in the left part, c2 somewhere in the right part
+      c1 <- runif(1, low + 0.1*(high - low), low + 0.4*(high - low))
+      c2 <- runif(1, low + 0.6*(high - low), low + 0.9*(high - low))
+
+      # cluster SD scales with width (tighter for small spans)
+      sd_cluster <- 0.1 * (high - low)
+
+      ages <- c(
+        rnorm(n1, c1, sd_cluster),
+        rnorm(n2, c2, sd_cluster)
+      )
+
+      shape <- "two_cluster"
     }
+    ages <- clamp_round(ages)
 
-    if (type == "unimodal") {
-      # Width scales with p; normal draw adds natural clumpiness
-      sd <- 0.8 + 10 * p
-      ages <- rnorm_clamped(size, center, sd)
-
-    } else if (type == "bimodal") {
-      # Separation grows with p; clusters narrower when far apart
-      sep <- 6 + 24 * p
-      sd <- 1 + 4 * (1 - p)
-      w <- 0.5 + runif(1, -0.15, 0.15)      # ~50/50 but not exact
-      n1 <- max(1, round(size * w)); n2 <- max(1, size - n1)
-      if (n1 + n2 > size) { if (runif(1) < 0.5) n1 <- n1 - 1 else n2 <- n2 - 1 }
-      c1 <- clamp(center - sep/2); c2 <- clamp(center + sep/2)
-      ages <- c(rnorm_clamped(n1, c1, sd), rnorm_clamped(n2, c2, sd))
-
-    } else { # core_outlier: tight core + 1 far member
-      n_core <- size - 1
-      sd_core <- 0.8 + 2 * p
-      core <- rnorm_clamped(n_core, center, sd_core)
-      offset <- sample(c(-1, 1), 1) * (12 + 18 * p)
-      outlier <- rnorm_clamped(1, center + offset, sd = 1.5)
-      ages <- c(core, outlier)
-    }
-
-    teams_list[[i]] <- tibble(team_id = paste0("Team_", size, "_", i),
-                              age = ages,
-                              team_size = size,
-                              diversity_profile = type,
-                              diversity_prop = p)
+    teams[[i]] <- tibble(
+      team_id           = paste0("Team_", size, "_", i),
+      age               = ages,
+      team_size         = size,
+      diversity_profile = shape,
+      diversity_prop    = width_prop
+    )
   }
-  dplyr::bind_rows(teams_list)
+
+  dplyr::bind_rows(teams)
 }
 
 # Create teams of size 5 and 10 with controlled diversity
@@ -120,9 +162,16 @@ teams <- bind_rows(teams_size_5, teams_size_10)
 
 ## Calculate Diversity Scores
 
-### Calculate Scores
-
-For clarity, we calculate each metric separately and then join them. Alternatively, you could use `compute_all_metrics()` for a more concise approach.
+```{r calculate-scores-text, echo=FALSE, results='asis'}
+if (is_pdf) {
+  cat("For each team, we calculate the five diversity metrics listed above.")
+} else {
+  cat("### Calculate Scores\n\n")
+  cat("For clarity, we calculate each metric separately and then join them.",
+      "Alternatively, you could use `compute_all_metrics()` for a more",
+      "concise approach.\n")
+}
+```
 
 ```{r calculate-scores}
 # Calculate each metric separately for clarity
@@ -132,7 +181,6 @@ div_scores <- teams %>%
     CEI = compute_CEI(age, range = c(20, 70)),
     Blau_5 = compute_Blau(age, bins = seq(20, 70, by = 5)),
     Blau_10 = compute_Blau(age, bins = seq(20, 70, by = 10)),
-    GMD = compute_GMD(age),
     CV = compute_cv(age),
     SD = compute_sd(age),
     group_members = paste(age, collapse = ","),
@@ -142,28 +190,41 @@ div_scores <- teams %>%
 
 ## Visualize Diversity Score Distributions
 
-To compare the distribution of all diversity measures across different team sizes, we use violin plots faceted by team size. This approach, using *normalized* scores, provides a clear visualization of the distribution shape and spread for each measure. This highlights that Blau index values are not-continuous and heavily influenced by binning choices, while CEI, CV, and SD show smooth distributions.
+To compare the distribution of all diversity measures across different team
+sizes, we use violin plots faceted by team size. This approach, using
+*normalized* scores, provides a clear visualization of the distribution
+shape and spread for each measure. This highlights that Blau index values
+are not-continuous and heavily influenced by binning choices, while CEI, CV,
+and SD show smooth distributions.
 
 ```{r visualize-violins, fig.width=12, fig.height=8}
 # Reshape data to long format for easier plotting
 div_long <- div_scores %>%
-  mutate(across(CEI:SD, ~c(scale(.x, center = FALSE)))) %>% 
-  pivot_longer(cols = CEI:SD, names_to = "Measure", values_to = "Value") %>% 
-  mutate(team_size = paste("Teams of", team_size) %>% factor(levels = c("Teams of 5", "Teams of 10")))
+  # Normalize by dividing by SD
+  mutate(across(CEI:SD, ~c(scale(.x, center = FALSE)))) %>%
+  pivot_longer(
+    cols = CEI:SD,
+    names_to = "Measure",
+    values_to = "Value"
+  ) %>%
+  mutate(
+    team_size = paste("Teams of", team_size) %>%
+      factor(levels = c("Teams of 5", "Teams of 10"))
+  )
 
 # Create violin plots
 ggplot(div_long, aes(x = Measure, y = Value, fill = Measure)) +
   geom_violin(trim = FALSE, alpha = 0.7) +
   facet_wrap(~ team_size, scales = "free") +
   scale_fill_viridis(discrete = TRUE, option = "C") +
-  #theme_minimal() +
   labs(
-    title = "Distribution of Diversity Measures by Team Size ...",
-    subtitle = "... divided by their standard deviation for comparabiity",
+    title = "Distribution of Diversity Measures by Team Size",
+    subtitle = "Divided by their standard deviation for comparability",
     x = "Diversity Measure",
     y = "Score",
     fill = "Measure"
   ) +
+  theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
@@ -178,10 +239,16 @@ div_scores %>%
 
 Key points to note:
 
-- CEI is related to both variety and variance-based measures, with correlation coefficients typically around .7–.85.
-- Blau's index depends on the width and alignment of bins; continuous GMD avoids these binning artefacts.
+- CEI is related to both variety and variance-based measures, with
+  correlation coefficients typically around .7–.85.
+- Blau's index depends on the width and alignment of bins; continuous CEI
+  avoids these binning artefacts.
 
-However, the specific correlation values depend on the simulation parameters. As will be shown below, different team configurations can lead to substantial divergence between measures - and the extent to which these teams appear in real-world samples will influence divergences between measures.
+However, the specific correlation values depend on the simulation
+parameters. As will be shown below, different team configurations can lead
+to substantial divergence between measures - and the extent to which these
+teams appear in real-world samples will influence divergences between
+measures.
 
 ## Illustrative comparison
 
@@ -203,7 +270,6 @@ example_scores <- example_teams %>%
     CEI = compute_CEI(ages, range = c(20, 70)),
     Blau_5 = compute_Blau(ages, bins = seq(20, 70, by = 5)),
     Blau_10 = compute_Blau(ages, bins = seq(20, 70, by = 10)),
-    GMD = compute_GMD(ages),
     CV = compute_cv(ages),
     SD = compute_sd(ages),
     team_members = paste(ages, collapse = ", "),
@@ -212,18 +278,17 @@ example_scores <- example_teams %>%
 
 # Quick comparison option using built-in plotting function:
 # plot_metric_comparison(example_scores,
-#                       metrics = c("CV", "SD", "Blau_5", "Blau_10", "GMD", "CEI"),
-#                       group_var = "team",
-#                       group_members_var = "team_members",
-#                       title = "Comparison of Normalised Diversity Indices")
+#   metrics = c("CV", "SD", "Blau_5", "Blau_10", "CEI"),
+#   group_var = "team",
+#   group_members_var = "team_members",
+#   title = "Comparison of Normalised Diversity Indices")
 
-# For this analysis, we create a custom visualization with detailed styling:
+# For this analysis, we create a custom visualization with detailed
+# styling:
 
 example_scores_long <- example_scores %>%
   pivot_longer(
-    cols = c(
-      CV, SD, Blau_5, Blau_10, CEI
-    ),
+    cols = c(CV, SD, Blau_5, Blau_10, CEI),
     names_to = "Index",
     values_to = "Score"
   ) %>%
@@ -232,9 +297,11 @@ example_scores_long <- example_scores %>%
   ungroup() %>%
   mutate(
     indicator_type = factor(
-      if_else(Index %in% c("CV", "SD", "Blau_5", "Blau_10"),
-              "Established Indicators",
-              "Coverage & Evenness Index"),
+      if_else(
+        Index %in% c("CV", "SD", "Blau_5", "Blau_10"),
+        "Established Indicators",
+        "Coverage & Evenness Index"
+      ),
       levels = c("Established Indicators", "Coverage & Evenness Index")
     )
   )
@@ -243,11 +310,9 @@ example_scores_long <- example_scores %>%
 # This allows lines to connect across the two indicator groups
 example_scores_long <- example_scores_long %>%
   mutate(
-    Index = factor(Index,
-      levels = c(
-        "CV", "SD", "Blau_5", "Blau_10",
-        "CEI"
-      )
+    Index = factor(
+      Index,
+      levels = c("CV", "SD", "Blau_5", "Blau_10", "CEI")
     ),
     # Map indices to numeric positions with a gap between groups
     x_pos = case_when(
@@ -297,6 +362,10 @@ p <- ggplot(
   )) +
   labs(
     title = "Comparison of Normalised Diversity Indices",
+    subtitle = paste(
+      "Lines show normalized scores for seven teams",
+      "across different metrics"
+    ),
     x = "", y = ""
   ) +
   theme_minimal() +
@@ -350,21 +419,30 @@ p
 
 Key points to note:
 
-- Teams B and C diverge hugely on the CV, but are identical on all other indices (including GMD). This highlights that CV’s scaling by the mean captures a different aspect than pure distance-based spread.
-- Teams D and E substantially differ on the indices that depend on binning - even though E is simply one year older than D. This discontinuity highlights the issue with binning.
-- Within this example, each operationalisation of diversity results in a different ranking of teams. This highlights that the choice of measure matters (though in practice, many teams will be similar across measures).
+- Teams B and C diverge hugely on the CV, but are identical on all other
+  indices. This highlights that CV's scaling by the mean captures a unique
+  aspect that needs to be theoretically justified.
+- Teams D and E substantially differ on the indices that depend on binning
+  - even though E is simply one year older than D. This discontinuity
+  highlights a key issue with binning.
+- Within this example, each operationalisation of diversity results in a
+  different ranking of teams. This highlights that the choice of measure
+  matters (though in practice, many teams will be similar across measures).
 
 
 ## Divergence between the measures
 
-Next we explore *where* diversity measures diverge. For that, we plot the associations and identify the greatest residuals. These cases can then help identify which measure best identifies diverse teams.
+Next we explore *where* diversity measures diverge. For that, we plot the
+associations and identify the greatest residuals. These cases can then help
+identify which measure best identifies diverse teams.
 
 ### Comparing Blau's Index and CEI
 
-Blau's index and CEI are correlated, yet each level of Blau's index corresponds to a range of CEI values. We explore these deviations below.
+Blau's index and CEI are correlated, yet each level of Blau's index
+corresponds to a range of CEI values. We explore these deviations below.
 
 ```{r divergence_blau5, fig.width=10, fig.height=6}
-p <- div_scores %>% 
+p <- div_scores %>%
   filter(team_size == 5) %>%
   ggplot(aes(x = CEI, y = Blau_5)) +
   geom_smooth(method = "lm", se = FALSE) +
@@ -372,14 +450,14 @@ p <- div_scores %>%
   scale_color_viridis(discrete = TRUE, option = "D") +
   theme_minimal() +
   labs(
-    title = "Blau's Index (5-year Binning) vs. CEI",
+    title = "CEI vs Blau's Index (5-year Binning)",
     subtitle = "Teams of 5",
     x = "Coverage & Evenness Index (CEI)",
-    y = "Blau's Index (5-year Binning)",
-  ) 
+    y = "Blau's Index (5-year Binning)"
+  )
 
-p %>% 
-  ggExtra::ggMarginal(p, type="histogram")
+p %>%
+  ggExtra::ggMarginal(p, type = "histogram")
 
 
 outliers <- div_scores %>% 
@@ -398,9 +476,7 @@ outliers <- div_scores %>%
   ungroup()
 ```
 
-The chart below shows, for each common Blau value the team with the highest and lowest CEI. This highlights how much CEI can vary even when Blau is constant.
-
-```{r divergence_blau_examples, fig.height=5, fig.width=10}
+```{r divergence_blau_examples, fig.height=5, fig.width=10, include=FALSE}
 # Plot CEI range for most common Blau value in each .1 range
 
   outliers_parsed <- outliers %>%
@@ -531,7 +607,7 @@ The chart below shows, for each common Blau value the team with the highest and 
 p_div_blau
 ```
 
-```{r blau_cei_breakdown}
+```{r blau_cei_breakdown, include=FALSE}
 # Create a table showing CEI components for the 12 teams shown in the Blau chart
 
 # Get unique team data (one row per team/score_type combination)
@@ -591,7 +667,7 @@ blau_table_data %>%
 ### Comparing the Coefficient of Variation and CEI
 
 ```{r divergence_cv, fig.width=10, fig.height=6}
-p <- div_scores %>% 
+p <- div_scores %>%
   filter(team_size == 5) %>%
   ggplot(aes(x = CEI, y = CV)) +
   geom_smooth(method = "lm", se = FALSE) +
@@ -599,14 +675,14 @@ p <- div_scores %>%
   scale_color_viridis(discrete = TRUE, option = "D") +
   theme_minimal() +
   labs(
-    title = "CV vs. CEI",
+    title = "CEI vs Coefficient of Variation",
     subtitle = "Teams of 5",
     x = "Coverage & Evenness Index (CEI)",
-    y = "Coefficient of Variation",
-  ) 
+    y = "Coefficient of Variation"
+  )
 
-p %>% 
-  ggExtra::ggMarginal(p, type="histogram")
+p %>%
+  ggExtra::ggMarginal(p, type = "histogram")
 
 
 outliers <- div_scores %>%
@@ -625,9 +701,7 @@ outliers <- div_scores %>%
   ungroup()
 ```
 
-The chart below shows, for each rounded CV value the team with the highest and lowest CEI. This highlights that particularly for intermediate CV values, CEI can vary widely (and towards high CV values, the relationship becomes reversed as evenness drops).
-
-```{r divergence_cv_examples, fig.height=5, fig.width=10}
+```{r divergence_cv_examples, fig.height=5, fig.width=10, include=FALSE}
 # Plot CEI range for selected CV values
 
   outliers_parsed <- outliers %>%
@@ -769,7 +843,7 @@ The chart below shows, for each rounded CV value the team with the highest and l
     p_div_cv
 ```
 
-```{r cv_cei_breakdown}
+```{r cv_cei_breakdown, include=FALSE}
 # Create a table showing CEI components for the 12 teams shown in the CV chart
 
 # Get unique team data (one row per team/score_type combination)
@@ -824,20 +898,155 @@ cv_table_data %>%
   )
 ```
 
+### Combined Divergence Visualization
+
+Figure 1 below shows, for common values of Blau's Index (Panel A) and the
+Coefficient of Variation (Panel B), teams with the highest and lowest CEI.
+This highlights that:
+
+- For Blau's Index: CEI can vary substantially (up to 4-fold) even when
+  Blau is constant, reflecting different distributions with the same
+  binned categories.
+- For CV: Particularly for intermediate CV values, CEI can vary widely.
+  Towards high CV values, the relationship can reverse as evenness drops.
+
 ```{r combined-plot, fig.width=12, fig.height=8}
 library(patchwork)
 (p_div_blau + labs(title = "")) + (p_div_cv + labs(title = "")) +
   plot_layout(ncol = 2) + plot_annotation(tag_levels = 'A')
 ```
 
+### Decomposing CEI for Divergent Teams
+
+Table 1 breaks down CEI into its Coverage (C) and Evenness (E) components
+for the teams shown in Figure 1. This reveals whether divergences are
+driven by differences in spread across the attribute range (Coverage) or
+uniformity of distribution (Evenness).
+
+```{r combined-cei-tables}
+# Combine both tables with clear section headers
+combined_table_data <- bind_rows(
+  blau_table_data %>%
+    rename(Group = Blau_Group) %>%
+    mutate(
+      Metric = "Blau Index",
+      Group = as.character(Group),
+      .before = 1
+    ),
+  cv_table_data %>%
+    rename(Group = CV_Group) %>%
+    mutate(Metric = "Coefficient of Variation", .before = 1)
+)
+
+combined_table_data %>%
+  gt(groupname_col = "Metric", rowname_col = "Group") %>%
+  tab_header(
+    title = "Coverage & Evenness Index (CEI) Components",
+    subtitle = paste(
+      "Broken down by Coverage (C) and Evenness (E) for teams",
+      "shown in Figure 1"
+    )
+  ) %>%
+  cols_label(
+    Type = "Type",
+    CEI = "CEI",
+    C = "Coverage (C)",
+    E = "Evenness (E)"
+  ) %>%
+  fmt_number(
+    columns = c(CEI, C, E),
+    decimals = 3
+  ) %>%
+  tab_options(
+    row_group.as_column = FALSE,
+    container.overflow.x = TRUE
+  )
+```
+
+## Sensitivity to range specification
+
+To check how sensitive CEI is to the attribute range supplied, we shift both
+the lower and upper boundaries up and down by 50%, 20%, and 0% of the correct
+50-year span (20–70). The table shows correlations between CEI values
+calculated with each shifted range: Pearson on the lower triangle and
+Spearman on the upper triangle.
+
+```{r cei-range-sensitivity, message=FALSE}
+range_offsets <- c(-0.5, -0.2, 0, 0.2, 0.5)
+range_labels <- scales::percent(range_offsets, accuracy = 1)
+
+# Define shifted ranges while keeping the span constant at 50 years
+range_defs <- tibble(
+  label = range_labels,
+  lower = 20 + range_offsets * 50,
+  upper = 70 + range_offsets * 50
+)
+
+# Precompute CEI for each range shift
+team_ceis <- teams %>%
+  group_by(team_id) %>%
+  summarise(ages = list(age), .groups = "drop")
+
+cei_variants <- team_ceis
+for (i in seq_len(nrow(range_defs))) {
+  current <- range_defs[i, ]
+  cei_variants <- cei_variants %>%
+    mutate(
+      !!current$label := purrr::map_dbl(
+        ages,
+        compute_CEI,
+        range = c(current$lower, current$upper)
+      )
+    )
+}
+
+cei_cols <- cei_variants %>%
+  select(all_of(range_defs$label))
+
+pearson_corr <- cor(cei_cols, method = "pearson", use = "complete.obs")
+spearman_corr <- cor(cei_cols, method = "spearman", use = "complete.obs")
+
+combined_corr <- pearson_corr
+combined_corr[upper.tri(combined_corr)] <- spearman_corr[upper.tri(spearman_corr)]
+
+combined_corr %>%
+  round(3) %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("Range shift") %>%
+  gt(rowname_col = "Range shift") %>%
+  tab_header(
+    title = "CEI sensitivity to range specification",
+    subtitle = paste(
+      "Pearson correlations (lower triangle) and Spearman correlations",
+      "(upper triangle) across shifted bounds"
+    )
+  ) %>%
+  tab_options(row_group.as_column = FALSE)
+```
+
 ## Summary
 
-In this analysis, we generated teams of two different sizes (5 and 10) with a comprehensive range of member distributions. Five diversity metrics—Even Spread Index (ESI), Blau's Index (with 5-year and 10-year binning), Coefficient of Variation (CV), and Standard Deviation (SD)—were computed for each team.
+In this analysis, we generated teams of two different sizes (5 and 10) with
+a comprehensive range of member distributions. Five diversity metrics—CEI,
+Blau's Index (with 5-year and 10-year binning), Coefficient of Variation
+(CV), and Standard Deviation (SD)—were computed for each team.
 
 **Key Findings:**
 
-- **Distribution of Diversity Measures:** Violin plots revealed the distribution and spread of each diversity measure across different team sizes. While Blau's index is very clustered around a low number of unique values, all other distributions are smooth and roughly normal.
+- **Distribution of Diversity Measures:** Violin plots revealed the
+  distribution and spread of each diversity measure across different team
+  sizes. While Blau's index is very clustered around a low number of unique
+  values, all other distributions are smooth and roughly normal.
 
-- **Correlation Analysis:** The correlation matrix indicated strong correlations between certain measures (e.g., CV and SD) while others showed weaker relationships. This suggests that while some diversity metrics capture similar aspects of diversity, others may provide unique insights.
+- **Correlation Analysis:** The correlation matrix indicated strong
+  correlations between certain measures (e.g., CV and SD) while others
+  showed weaker relationships. This suggests that while some diversity
+  metrics capture similar aspects of diversity, others may provide unique
+  insights.
 
-- **Measures Divergence:** A comparison of 6 specific teams highlighted that each index can result in a unique ordering, so that the choice matters. Similarly, looking at the residuals between CEI and Blau's Index or CV, we identified the teams where the measures diverged the most - and would argue that in all these cases, CEI indicates an appropriate difference between the teams.
+- **Measures Divergence:** A comparison of 7 specific teams highlighted
+  that each index can result in a unique ordering, so that the choice
+  matters. Similarly, looking at the residuals between CEI and Blau's Index
+  or CV, we identified the teams where the measures diverged the most - and
+  would argue that in all these cases, CEI indicates an appropriate
+  difference between the teams.
