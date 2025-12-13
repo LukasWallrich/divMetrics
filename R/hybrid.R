@@ -148,7 +148,7 @@ compute_CEI <- function(x, group = NULL, range = NULL, na.rm = FALSE, return = "
     if (obs_range == 0) return(list(CEI = 0, C = C, E = 0))
     ideal <- seq(min(values), max(values), length.out = n)
     abs_dev <- sum(abs(values - ideal))
-    max_dev <- (obs_range * (n - 1)) / 2
+    max_dev <- (obs_range * (n)) / 2
     E <- 1 - (abs_dev / max_dev)
     list(CEI = C * E, C = C, E = E)
   }
