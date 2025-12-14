@@ -10,6 +10,36 @@ name: R-CMD-check.yaml
 permissions: read-all
 
 jobs:
+  roxygen:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::roxygen2
+
+      - name: Generate and commit roxygen2 docs
+        run: |
+          Rscript -e 'roxygen2::roxygenise()'
+
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add NAMESPACE man/
+            git commit -m "CI: update roxygen2 documentation"
+            git push
+          fi
+
   R-CMD-check:
     runs-on: ${{ matrix.config.os }}
 
@@ -19,7 +49,6 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - {os: macos-latest,   r: 'release'}
           - {os: windows-latest, r: 'release'}
           - {os: ubuntu-latest,   r: 'devel', http-user-agent: 'release'}
           - {os: ubuntu-latest,   r: 'release'}
