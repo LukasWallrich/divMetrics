@@ -21,7 +21,9 @@ compute_Blau(
 
 \item{bin_width}{Positive numeric value specifying bin width.}
 
-\item{bins}{Optional numeric vector of bin boundaries. Values are assigned to bins using left-inclusive, right-exclusive intervals (i.e., first interval [a, b) does not include b).#' @param na.rm Logical. If TRUE, NA values are removed.}
+\item{bins}{Optional numeric vector of bin boundaries. Values are assigned to bins using left-inclusive, right-exclusive intervals (i.e., first interval [a, b) does not include b).}
+
+\item{na.rm}{Logical. If TRUE, NA values are removed.}
 
 \item{verbose}{Logical. If TRUE, prints the bin breaks.}
 

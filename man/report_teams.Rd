@@ -22,3 +22,4 @@ Combines attribute values by team, maintaining the order of first appearance.
 report_teams(c("A", "B", "C", "A", "A", "A"), c(1,1,1,2,2,2))
 report_teams(c(1,2,3,4), c(2,2,1,1))
 }
+\keyword{internal}
