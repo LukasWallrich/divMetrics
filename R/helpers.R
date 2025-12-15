@@ -56,6 +56,7 @@ remove_na <- function(x, group = NULL, na.rm = FALSE) {
 #' report_teams(c("A", "B", "C", "A", "A", "A"), c(1,1,1,2,2,2))
 #' report_teams(c(1,2,3,4), c(2,2,1,1))
 #' @keywords internal
+#' @noRd
 
 report_teams <- function(attribute, team) {
   if (length(attribute) != length(team)) {
