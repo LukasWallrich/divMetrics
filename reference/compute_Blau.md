@@ -36,8 +36,11 @@ compute_Blau(
 
   Optional numeric vector of bin boundaries. Values are assigned to bins
   using left-inclusive, right-exclusive intervals (i.e., first interval
-  \[a, b) does not include b).#' @param na.rm Logical. If TRUE, NA
-  values are removed.
+  \[a, b) does not include b).
+
+- na.rm:
+
+  Logical. If TRUE, NA values are removed.
 
 - verbose:
 
