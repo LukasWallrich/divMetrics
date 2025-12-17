@@ -40,7 +40,7 @@ compute_Blau <- function(x, group = NULL, bin_width = NULL, bins = NULL, na.rm =
   }
 
   if (is.null(group)) {
-    bin_counts <- binned_data %>% dplyr::count(.data$bin) %>% dplyr::pull(n)
+    bin_counts <- binned_data %>% dplyr::count(.data$bin) %>% dplyr::pull(.data$n)
     res <- compute_group_blau(bin_counts)
   } else {
     res <- binned_data %>%
