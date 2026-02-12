@@ -8,13 +8,28 @@ create_bins <- function(x, bin_width = NULL, bins = NULL, return_midpoints = FAL
   if (!is.null(bin_width)) {
     if (!is.numeric(bin_width) || length(bin_width) != 1 || bin_width <= 0)
       stop("`bin_width` must be a single positive numeric value.")
-    global_min <- floor(min(x, na.rm = TRUE) / bin_width) * bin_width
-    global_max <- ceiling(max(x, na.rm = TRUE) / bin_width) * bin_width
+    min_x <- min(x, na.rm = TRUE)
+    max_x <- max(x, na.rm = TRUE)
+    global_min <- floor(min_x / bin_width) * bin_width
+    global_max <- ceiling(max_x / bin_width) * bin_width
+    if (isTRUE(all.equal(global_max, max_x))) {
+      global_max <- global_max + bin_width
+    }
     breaks <- seq(from = global_min, to = global_max, by = bin_width)
   } else if (!is.null(bins)) {
     if (!is.numeric(bins) || length(bins) < 2)
       stop("`bins` must be a numeric vector with at least two values defining the bin boundaries.")
     breaks <- bins
+    if (any(!is.finite(breaks))) stop("`bins` must be finite numeric values.")
+    if (any(diff(breaks) <= 0)) stop("`bins` must be strictly increasing.")
+    max_x <- max(x, na.rm = TRUE)
+    last_break <- breaks[length(breaks)]
+    if (max_x > last_break) {
+      stop("`bins` must extend beyond the largest value in `x`.")
+    }
+    if (isTRUE(all.equal(max_x, last_break))) {
+      breaks[length(breaks)] <- last_break + .Machine$double.eps * max(1, abs(last_break))
+    }
   } else {
     stop("Either bin_width or bins must be provided.")
   }
@@ -31,6 +46,9 @@ remove_na <- function(x, group = NULL, na.rm = FALSE) {
   if (!is.null(group) && length(x) != length(group)) {
     stop("`x` and `group` must have the same length.")
   }
+  if (length(x) == 0) {
+    stop("`x` must contain at least one value.")
+  }
   if (!na.rm && any(is.na(x)))
     stop("`x` contains missing values. Set na.rm = TRUE to ignore them.")
   if (na.rm && any(is.na(x))) {
@@ -38,6 +56,9 @@ remove_na <- function(x, group = NULL, na.rm = FALSE) {
     warning(sum(!keep), " missing values were removed.")
     x <- x[keep]
     if (!is.null(group)) group <- group[keep]
+  }
+  if (length(x) == 0) {
+    stop("No non-missing values remain after NA removal.")
   }
   list(x = x, group = group)
 }

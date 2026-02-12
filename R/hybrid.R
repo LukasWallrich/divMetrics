@@ -114,21 +114,37 @@ compute_CEI <- function(x, group = NULL, range = NULL, na.rm = FALSE, return = "
     stop("`x` and `group` must have the same length.")
   }
 
-  if (!na.rm && any(is.na(x))) stop("`x` contains missing values. Set na.rm = TRUE to ignore them.")
-  if (na.rm && any(is.na(x))) {
-    keep <- !is.na(x)
-    warning(sum(!keep), " missing values were removed.")
-    x <- x[keep]
-    if (!is.null(group)) group <- group[keep]
-  }
+  na_removed <- remove_na(x, group = group, na.rm = na.rm)
+  x <- na_removed$x
+  group <- na_removed$group
 
   if (!is.factor(group) && !is.null(group)) group <- factor(group, levels = unique(group))
 
   if (is.null(range)) {
-    range <- range(x, na.rm = TRUE)
+    range <- base::range(x)
     if (diff(range) == 0) {
       warning("Observed range is zero; CEI components will be zero.")
-      return(0)
+      if (is.null(group)) {
+        res <- 0
+      } else {
+        res <- stats::setNames(rep(0, length(levels(group))), levels(group))
+      }
+      if (return_df) {
+        if (is.null(group)) {
+          return(tibble::tibble(
+            group = NA_character_,
+            group_members = paste(x, collapse = ", "),
+            index_value = res
+          ))
+        }
+        group_members <- report_teams(x, group)
+        return(tibble::tibble(
+          group = names(res),
+          group_members = unname(group_members[names(res)]),
+          index_value = unname(res)
+        ))
+      }
+      return(res)
     }
     if (verbose) {
       message("Using observed range: c(", paste(range, collapse = ", "), ")")
@@ -157,14 +173,14 @@ compute_CEI <- function(x, group = NULL, range = NULL, na.rm = FALSE, return = "
     list(CEI = C * E, C = C, E = E)
   }
 
-  return <- toupper(return)
-  if (!return %in% c("CEI", "C", "E")) {
+  component <- toupper(return)
+  if (!component %in% c("CEI", "C", "E")) {
     stop("Invalid return value. Use 'CEI', 'C', or 'E'.")
   }
 
   if (is.null(group)) {
     metrics <- compute_group_cei(x)
-    component_value <- metrics[[return]]
+    component_value <- metrics[[component]]
     if (return_df) {
       tibble::tibble(
         group = NA_character_,
@@ -180,7 +196,7 @@ compute_CEI <- function(x, group = NULL, range = NULL, na.rm = FALSE, return = "
       dplyr::summarise(metrics = list(compute_group_cei(x)), .groups = "drop") %>%
       tidyr::unnest_wider(metrics)
 
-    component_values <- res[[return]]
+    component_values <- res[[component]]
     names(component_values) <- res$group
 
     if (return_df) {

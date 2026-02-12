@@ -114,14 +114,14 @@ compute_Rao(cats, D = D)
 ```{r example-all}
 # For continuous attributes, include CV, SD, GMD, CEI,
 # and (optionally) Blau if you pass bins/bin_width
-compute_all_metrics(ages, method = "continuous", bin_width = 10, return_df = TRUE)
+compute_all_metrics(ages, bin_width = 10, return_df = TRUE)
 ```
 
 ## Visualizing metrics across groups
 
 Compare how different metrics rank teams or groups using `plot_metric_comparison()`:
 
-```{r example-plotting}
+```{r example-plotting, warning=FALSE}
 # Compute metrics for multiple groups
 ages <- c(25, 28, 32, 45, 52, 30, 31, 32, 33, 34)
 teams <- c(rep("Team A", 5), rep("Team B", 5))
@@ -159,6 +159,11 @@ See the article on "Comparing Metrics" for further details.
 - Optional data frame output format
 - Implementation of the novel CEI metric (Coverage & Evenness Index)
 - Automatic binning options for Blau (variety)
+
+## Roadmap
+
+- `compute_all_metrics()` for categorical attributes (integrating `compute_Rao()` with distance matrices)
+- Additional visualisation helpers for comparing metric behaviour across teams
 
 ## References
 

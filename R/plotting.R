@@ -76,7 +76,7 @@ plot_metric_comparison <- function(data, metrics, group_var,
     if (requireNamespace("ggrepel", quietly = TRUE)) {
       label_data <- plot_data %>%
         dplyr::filter(.data$Metric == metrics[1])
-      label_data$label <- paste0(data[[group_var]], ": ", data[[group_members_var]])
+      label_data$label <- paste0(label_data[[group_var]], ": ", label_data[[group_members_var]])
 
       p <- p + ggrepel::geom_text_repel(data = label_data,
                                         ggplot2::aes(label = .data$label),
@@ -92,11 +92,8 @@ plot_metric_comparison <- function(data, metrics, group_var,
 #'
 #' Convenience function to compute multiple diversity metrics at once.
 #'
-#' @param x Numeric vector of values (continuous attributes) or character/factor for categorical
+#' @param x Numeric vector of values (continuous attributes).
 #' @param group Optional grouping variable
-#' @param method Character. One of "continuous" (default) or "categorical".
-#'   When "continuous", computes CV, SD, GMD, CEI (and Blau if binning is provided).
-#'   When "categorical", not yet implemented.
 #' @param bin_width Bin width for Blau (if NULL, skips Blau)
 #' @param bins Optional bin boundaries for Blau
 #' @param range Optional range for CEI (if NULL, uses observed range)
@@ -115,18 +112,12 @@ plot_metric_comparison <- function(data, metrics, group_var,
 #' teams <- c(rep("A", 5), rep("B", 5))
 #' compute_all_metrics(ages, group = teams, bin_width = 10, return_df = TRUE)
 compute_all_metrics <- function(x, group = NULL,
-                               method = c("continuous", "categorical"),
                                bin_width = NULL, bins = NULL,
                                range = NULL, na.rm = FALSE, return_df = FALSE) {
 
-  method <- match.arg(method)
+  if (!is.numeric(x)) stop("`x` must be a numeric vector.")
   results <- list()
 
-  if (method == "categorical") {
-    stop("Categorical method not yet implemented.")
-  }
-
-  # For continuous attributes
   results$CV <- compute_cv(x, group = group, na.rm = na.rm)
   results$SD <- compute_sd(x, group = group, na.rm = na.rm)
   results$GMD <- compute_GMD(x, group = group, na.rm = na.rm)
@@ -137,11 +128,6 @@ compute_all_metrics <- function(x, group = NULL,
                                  bins = bins, na.rm = na.rm)
   }
 
-  # Hybrid metric
-  if (is.null(range)) {
-    message("Using observed range for CEI. Specify 'range' for theoretical range.")
-    range <- range(x, na.rm = TRUE)
-  }
   results$CEI <- compute_CEI(x, group = group, range = range, na.rm = na.rm)
 
   # Convert to data frame if requested

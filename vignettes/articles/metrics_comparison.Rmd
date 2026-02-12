@@ -16,6 +16,12 @@ header-includes:
 ---
 
 ```{r, include = FALSE}
+# Ensure package rendering doesn't try to write caches outside the project
+# (relevant in sandboxed environments).
+cache_dir <- file.path(tempdir(), "R_user_cache")
+dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
+Sys.setenv(R_USER_CACHE_DIR = cache_dir)
+
 is_pdf <- knitr::opts_knit$get("rmarkdown.pandoc.to") == "latex"
 
 knitr::opts_chunk$set(
@@ -26,7 +32,13 @@ knitr::opts_chunk$set(
 ```
 
 ```{r setup}
-library(divMetrics)
+# Prefer the development version when rendering from the package repo.
+pkg_root <- tryCatch(rprojroot::find_package_root_file(), error = function(e) NULL)
+if (!is.null(pkg_root) && requireNamespace("devtools", quietly = TRUE)) {
+  devtools::load_all(pkg_root, quiet = TRUE)
+} else {
+  library(divMetrics)
+}
 library(dplyr)
 library(ggplot2)
 library(purrr)
@@ -37,11 +49,17 @@ library(ggtext)
 library(tidyr)
 library(gt)  # For tables
 
-# Load internal helper functions
-# Note: These are internal functions accessed with ::: and are not part of the public API
+# Load internal helper functions (not part of the public API)
 cor_matrix <- divMetrics:::cor_matrix
 report_cor_table <- divMetrics:::report_cor_table
 line_to_vector <- divMetrics:::line_to_vector
+
+# Source team generation helper (lives in inst/scripts, not in R/)
+tg_path <- system.file("scripts", "team_generation.R", package = "divMetrics")
+if (tg_path == "" && !is.null(pkg_root)) {
+  tg_path <- file.path(pkg_root, "inst", "scripts", "team_generation.R")
+}
+source(tg_path)
 ```
 
 
@@ -61,95 +79,37 @@ use the following diversity measures:
 
 ```{r generate-teams-text, echo=FALSE, results='asis'}
 if (is_pdf) {
-  cat("Team diversity is generated using a hybrid approach where a continuous",
-      "diversity parameter directly controls the width and spread of team",
-      "compositions. This creates a smooth continuum from very homogeneous",
-      "teams (narrow age ranges of 2-3 years) through moderate diversity",
-      "(wider unimodal distributions) to highly diverse teams including",
-      "bimodal (two separated clusters) and skewed (unequal cluster sizes)",
-      "configurations. This approach ensures that the underlying diversity",
-      "parameter has a strong, direct relationship with measured diversity",
-      "while still capturing the range of team configurations observed",
-      "empirically.\n")
+  cat("Teams are generated using a role-based process that varies two",
+      "distinct features of age composition: (a) how widely the team covers",
+      "the 20–70 range (coverage) and (b) how evenly members are distributed",
+      "across that covered range (evenness). Concretely, each team is formed",
+      "by sampling members around a small number of career-stage “anchors”",
+      "(roughly 5-year wide) under one of four plausible staffing patterns:",
+      "single-cohort teams; adjacent “career ladder” teams with a seniority",
+      "pyramid; balanced multi-role teams (sometimes spanning a wider age",
+      "range, sometimes compressed); and tokenism teams with one dominant",
+      "cohort plus one or two far-away token",
+      "members. This produces many teams that share similar SD/CV or Blau",
+      "values but differ strongly in coverage and/or evenness, highlighting",
+      "where the CEI diverges from conventional indices.\n")
 }
 ```
 
 ```{r generate-teams, message=FALSE}
 set.seed(123)  # Set seed for reproducibility
 
-# Generate teams with varying diversity levels
-# width_prop controls span; teams can be unimodal or two-cluster
-generate_team <- function(size, n_teams, bounds = c(20, 70),
-                          p_two_cluster = 0.3,
-                          width_shape1 = 0.8, width_shape2 = 0.8) {
-  min_age   <- bounds[1]
-  max_age   <- bounds[2]
-  total_span <- max_age - min_age
+# Use the same mix of plausible staffing patterns as in the statistical power
+# vignette so both analyses rely on a consistent team-generation process.
+team_profile_probs <- c(
+  single_cohort = 0.05,
+  career_ladder = 0.10,
+  balanced_roles = 0.35,
+  compact_balanced = 0.45,
+  tokenism = 0.05
+)
 
-  clamp_round <- function(x) {
-    round(pmin(pmax(x, min_age), max_age))
-  }
-
-  teams <- vector("list", n_teams)
-
-  for (i in seq_len(n_teams)) {
-
-    # 1. Draw a width (span) on [0, total_span]
-    # mostly narrow, some wide
-    width_prop <- rbeta(1, width_shape1, width_shape2)
-    width <- max(1, width_prop * total_span)  # at least 1 year
-
-    # 2. Place that interval somewhere within [min_age, max_age]
-    start <- runif(1, min_age, max_age - width)
-    low   <- start
-    high  <- start + width
-
-    # 3. Decide on unimodal vs two-cluster
-    two_cluster <- runif(1) < p_two_cluster
-
-    if (!two_cluster) {
-      ages <- runif(size, low, high)
-      shape <- "unimodal"
-
-    } else {
-      # Two clusters with flexible relative sizes and separation
-      # Cluster sizes vary; extreme splits produce "outlier-like"
-      # teams naturally
-      # encourages unequal splits
-      w  <- rbeta(1, 0.8, 0.8)
-      n1 <- max(1, round(size * w))
-      n2 <- max(1, size - n1)
-      if (n1 + n2 > size) {
-        if (runif(1) < 0.5) n1 <- n1 - 1 else n2 <- n2 - 1
-      }
-
-      # Position clusters inside the span
-      # c1 somewhere in the left part, c2 somewhere in the right part
-      c1 <- runif(1, low + 0.1*(high - low), low + 0.4*(high - low))
-      c2 <- runif(1, low + 0.6*(high - low), low + 0.9*(high - low))
-
-      # cluster SD scales with width (tighter for small spans)
-      sd_cluster <- 0.1 * (high - low)
-
-      ages <- c(
-        rnorm(n1, c1, sd_cluster),
-        rnorm(n2, c2, sd_cluster)
-      )
-
-      shape <- "two_cluster"
-    }
-    ages <- clamp_round(ages)
-
-    teams[[i]] <- tibble(
-      team_id           = paste0("Team_", size, "_", i),
-      age               = ages,
-      team_size         = size,
-      diversity_profile = shape,
-      diversity_prop    = width_prop
-    )
-  }
-
-  dplyr::bind_rows(teams)
+generate_team <- function(size, n_teams, ...) {
+  generate_age_teams(size, n_teams, profile_probs = team_profile_probs, ...)
 }
 
 # Create teams of size 5 and 10 with controlled diversity
@@ -231,17 +191,22 @@ ggplot(div_long, aes(x = Measure, y = Value, fill = Measure)) +
 
 ## Correlation Analysis
 
-```{r correlation-analysis, fig.width=8, fig.height=6}
-div_scores %>%
+```{r correlation-analysis, fig.width=8, fig.height=6, warning=FALSE}
+cor_mat <- div_scores %>%
   select(CEI:SD) %>%
-  cor_matrix() %>%
-  report_cor_table()
+  cor_matrix()
+
+cor_mat %>% report_cor_table()
+
+cei_cors <- cor_mat[, "CEI"]
+cei_cors <- cei_cors[names(cei_cors) != "CEI"]
+cei_cor_range <- range(cei_cors)
 ```
 
 Key points to note:
 
 - CEI is related to both variety and variance-based measures, with
-  correlation coefficients typically around .7–.85.
+  correlation coefficients ranging from about `r round(cei_cor_range[1], 1)` to `r round(cei_cor_range[2], 1)`.
 - Blau's index depends on the width and alignment of bins; continuous CEI
   avoids these binning artefacts.
 
@@ -966,32 +931,33 @@ combined_table_data %>%
 
 ## Sensitivity to range specification
 
-To check how sensitive CEI is to the attribute range supplied, we shift both
-the lower and upper boundaries up and down by 50%, 20%, and 0% of the correct
-50-year span (20–70). The table shows correlations between CEI values
-calculated with each shifted range: Pearson on the lower triangle and
-Spearman on the upper triangle.
+CEI uses the *width* of the theoretical range (the denominator of the coverage
+component) but not its absolute location. This implies two practically useful
+properties:
+
+1. **Translation invariance**: shifting both endpoints by the same amount (but
+   keeping the range width constant) leaves CEI unchanged.
+2. **Width sensitivity**: specifying a substantially wider theoretical range
+   compresses CEI values (lower coverage for the same observed spread). When
+   the *same* range is applied to all teams, this changes absolute values but
+   not rankings (it rescales all CEI values by the same constant factor).
 
 ```{r cei-range-sensitivity, message=FALSE}
-range_offsets <- c(-0.5, -0.2, 0, 0.2, 0.5)
-range_labels <- scales::percent(range_offsets, accuracy = 1)
-
-# Define shifted ranges while keeping the span constant at 50 years
-range_defs <- tibble(
-  label = range_labels,
-  lower = 20 + range_offsets * 50,
-  upper = 70 + range_offsets * 50
-)
-
-# Precompute CEI for each range shift
 team_ceis <- teams %>%
   group_by(team_id) %>%
   summarise(ages = list(age), .groups = "drop")
 
-cei_variants <- team_ceis
-for (i in seq_len(nrow(range_defs))) {
-  current <- range_defs[i, ]
-  cei_variants <- cei_variants %>%
+# 1) Translation invariance: same span (50 years), different endpoints
+translation_ranges <- tibble::tibble(
+  label = c("20–70 (reference)", "0–50 (shifted)", "40–90 (shifted)"),
+  lower = c(20, 0, 40),
+  upper = c(70, 50, 90)
+)
+
+cei_translation <- team_ceis
+for (i in seq_len(nrow(translation_ranges))) {
+  current <- translation_ranges[i, ]
+  cei_translation <- cei_translation %>%
     mutate(
       !!current$label := purrr::map_dbl(
         ages,
@@ -1001,28 +967,60 @@ for (i in seq_len(nrow(range_defs))) {
     )
 }
 
-cei_cols <- cei_variants %>%
-  select(all_of(range_defs$label))
+translation_mat <- cei_translation %>%
+  select(all_of(translation_ranges$label)) %>%
+  cor(use = "complete.obs") %>%
+  round(3)
 
-pearson_corr <- cor(cei_cols, method = "pearson", use = "complete.obs")
-spearman_corr <- cor(cei_cols, method = "spearman", use = "complete.obs")
+max_abs_diff <- max(abs(cei_translation[[translation_ranges$label[1]]] -
+  cei_translation[[translation_ranges$label[2]]]),
+na.rm = TRUE)
 
-combined_corr <- pearson_corr
-combined_corr[upper.tri(combined_corr)] <- spearman_corr[upper.tri(spearman_corr)]
+cat("Translation invariance check (all spans = 50 years):\n")
+print(translation_mat)
+cat("\nMax |CEI(reference) - CEI(shifted)|:", signif(max_abs_diff, 3), "\n\n")
 
-combined_corr %>%
-  round(3) %>%
-  as.data.frame() %>%
-  tibble::rownames_to_column("Range shift") %>%
-  gt(rowname_col = "Range shift") %>%
-  tab_header(
-    title = "CEI sensitivity to range specification",
-    subtitle = paste(
-      "Pearson correlations (lower triangle) and Spearman correlations",
-      "(upper triangle) across shifted bounds"
+# 2) Width sensitivity: wider theoretical ranges (all include 20–70)
+width_ranges <- tibble::tibble(
+  label = c("20–70 (50y)", "15–75 (60y)", "10–80 (70y)", "0–100 (100y)"),
+  lower = c(20, 15, 10, 0),
+  upper = c(70, 75, 80, 100)
+)
+
+cei_width <- team_ceis
+for (i in seq_len(nrow(width_ranges))) {
+  current <- width_ranges[i, ]
+  cei_width <- cei_width %>%
+    mutate(
+      !!current$label := purrr::map_dbl(
+        ages,
+        compute_CEI,
+        range = c(current$lower, current$upper)
+      )
     )
-  ) %>%
-  tab_options(row_group.as_column = FALSE)
+}
+
+width_cols <- cei_width %>% select(all_of(width_ranges$label))
+
+width_summary <- tibble::tibble(
+  Range = width_ranges$label,
+  `Range width (years)` = width_ranges$upper - width_ranges$lower,
+  `Correlation with 20–70` = sapply(width_ranges$label, function(lbl) {
+    cor(width_cols[[lbl]], width_cols[["20–70 (50y)"]], use = "complete.obs")
+  }),
+  `Rank correlation with 20–70` = sapply(width_ranges$label, function(lbl) {
+    cor(width_cols[[lbl]], width_cols[["20–70 (50y)"]], method = "spearman", use = "complete.obs")
+  }),
+  `Mean CEI` = sapply(width_ranges$label, function(lbl) mean(width_cols[[lbl]], na.rm = TRUE))
+) %>%
+  mutate(across(c(`Correlation with 20–70`, `Rank correlation with 20–70`, `Mean CEI`), ~ round(.x, 3)))
+
+width_summary %>%
+  gt() %>%
+  tab_header(
+    title = "CEI sensitivity to the width of the specified range",
+    subtitle = "Range width rescales CEI (mean changes) but rankings are unchanged when the same range is used for all teams"
+  )
 ```
 
 ## Summary

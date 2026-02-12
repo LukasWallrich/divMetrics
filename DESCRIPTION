@@ -1,6 +1,8 @@
 Package: divMetrics
 Title: Computation and Visual Exploration of Diversity Indices
 Version: 0.2.0
+Author: Lukas Wallrich [aut, cre]
+Maintainer: Lukas Wallrich <l.wallrich@bbk.ac.uk>
 Authors@R: 
     person("Lukas", "Wallrich", , "l.wallrich@bbk.ac.uk", role = c("aut", "cre"))
 Description: Provides functions for calculating a range of diversity
@@ -11,6 +13,8 @@ License: MIT + file LICENSE
 URL: https://lukaswallrich.github.io/divMetrics/, https://github.com/LukasWallrich/divMetrics
 BugReports: https://github.com/LukasWallrich/divMetrics/issues
 Encoding: UTF-8
+Depends:
+    R (>= 4.1.0)
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Suggests:
@@ -21,9 +25,7 @@ Suggests:
     pkgdown,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
-VignetteBuilder: knitr
 Imports:
     dplyr,
     tibble,
-    tidyr,
-    magrittr
+    tidyr

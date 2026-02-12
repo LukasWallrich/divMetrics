@@ -5,6 +5,12 @@ testthat::test_that("compute_Blau returns correct index with given bins", {
   testthat::expect_equal(result, 0.5)
 })
 
+testthat::test_that("compute_Blau includes values equal to the upper break", {
+  # With right = FALSE, values equal to the upper boundary would otherwise be NA.
+  res <- compute_Blau(c(0, 2, 4), bin_width = 2, na.rm = TRUE)
+  testthat::expect_equal(res, 2 / 3)
+})
+
 testthat::test_that("compute_Blau errors when both bin_width and bins are provided", {
   testthat::expect_error(compute_Blau(c(1, 2, 3), bin_width = 1, bins = c(0, 2, 4)))
 })

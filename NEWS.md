@@ -5,11 +5,10 @@
 ### Major Changes
 - Initial beta release of the divMetrics package
 - Uniform functions to calculate a variety of team diversity metrics
-  - Variety based on categorical attributes/categorisation: Blau's index
-  - Separation based on continuous attributes: Standard deviation, Gini Mean Difference
-  - Disparity based on continuous attributes: Coverage and Evenness Index (CEI)
-  - Hybrid metrics: Rao's quadratic entropy for categorical attributes
-  - New index for variety without categorisation: Coverage & Evenness Index (CEI)
+  - Variety based on categorisation: Blau's index
+  - Separation based on continuous attributes: Standard deviation, Coefficient of variation, Gini Mean Difference
+  - Hybrid metrics: Rao's quadratic entropy (categorical, with distance matrix), Coverage & Evenness Index (CEI; continuous, combining range coverage with evenness)
+- Convenience function `compute_all_metrics()` to calculate all continuous metrics at once
 
 ### Features
 - Consistent interface across all diversity metrics

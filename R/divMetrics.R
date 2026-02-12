@@ -6,6 +6,5 @@
 #' between diversity measures to pick one that matches their research questions.
 #'
 #' @keywords internal
-#' @importFrom magrittr %>%
-#' @importFrom dplyr .data
+#' @importFrom dplyr %>% .data
 "_PACKAGE"

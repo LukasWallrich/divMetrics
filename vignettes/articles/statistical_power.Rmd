@@ -11,12 +11,20 @@ output:
 ---
 
 ```{r, include = FALSE}
+# Ensure package rendering doesn't try to write caches outside the project
+# (relevant in sandboxed environments).
+cache_dir <- file.path(tempdir(), "R_user_cache")
+dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
+Sys.setenv(R_USER_CACHE_DIR = cache_dir)
+
 # Detect output format
 is_pdf <- knitr::is_latex_output()
 
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
+  warning = FALSE,
+  message = FALSE,
   cache = TRUE,
   cache.lazy = FALSE,
   echo = !is_pdf  # Hide code in PDF, show in HTML
@@ -24,7 +32,20 @@ knitr::opts_chunk$set(
 ```
 
 ```{r setup}
-library(divMetrics)
+# Prefer the development version when rendering from the package repo.
+pkg_root <- tryCatch(rprojroot::find_package_root_file(), error = function(e) NULL)
+if (!is.null(pkg_root) && requireNamespace("devtools", quietly = TRUE)) {
+  devtools::load_all(pkg_root, quiet = TRUE)
+} else {
+  library(divMetrics)
+}
+
+# Source team generation helper (lives in inst/scripts, not in R/)
+tg_path <- system.file("scripts", "team_generation.R", package = "divMetrics")
+if (tg_path == "" && !is.null(pkg_root)) {
+  tg_path <- file.path(pkg_root, "inst", "scripts", "team_generation.R")
+}
+source(tg_path)
 library(dplyr)
 library(ggplot2)
 library(tidyr)
@@ -55,9 +76,9 @@ To produce realistically modest effect sizes (correlations around r ≈ 0.2), we
 
 ## Simulation approach
 
-The agent-based model follows Hong & Page's (2004) hill-climbing setup while allowing for different information landscapes as in Grim et al. (2019). Ages stand in for a single salient informational attribute, with teams sampled from a workplace-relevant range of 20-70 years (a 50-year span). Team diversity is generated using a hybrid approach where a continuous diversity parameter directly controls the width and spread of team compositions. This creates a smooth continuum from very homogeneous teams (narrow age ranges of 2-3 years) through moderate diversity (wider unimodal distributions) to highly diverse teams including bimodal (two separated clusters) and skewed (dominant cluster with minority members) configurations. This approach ensures that the underlying diversity parameter has a strong, direct relationship with measured diversity while still capturing the range of team configurations observed empirically. Diversity is then measured with several commonly used indices, including the Coverage & Evenness Index (CEI), Blau, Gini Mean Difference (GMD), coefficient of variation, and standard deviation, all referenced to the same 20-70 range so that comparisons remain consistent across teams.
+The agent-based model follows Hong & Page's (2004) hill-climbing setup while allowing for different information landscapes as in Grim et al. (2019). Ages stand in for a single salient informational attribute, with teams sampled from a workplace-relevant range of 20-70 years (a 50-year span). Team diversity is generated using a role-based process that samples members around a small number of career-stage “anchors” (roughly 5-year wide) under several plausible staffing patterns: single-cohort teams; adjacent “career ladder” teams with a seniority pyramid; balanced multi-role teams (sometimes spanning a wider age range, sometimes compressed); and tokenism teams with one dominant cohort plus one or two far-away token members. This setup intentionally varies coverage and evenness somewhat independently, creating many teams that share similar SD/CV or Blau values while differing substantially in the variety-like distributional features CEI is designed to capture. Diversity is then measured with several commonly used indices, including the Coverage & Evenness Index (CEI), Blau, Gini Mean Difference (GMD), coefficient of variation, and standard deviation, all referenced to the same 20-70 range so that comparisons remain consistent across teams.
 
-Each simulated team explores a landscape of 50 positions, matching the 50-year age span. We vary two structural factors: team size (5 vs. 10 members) and landscape smoothness (3 vs. 8). Lower smoothness values produce rugged landscapes where diversity offers greater search benefits, whereas higher smoothness values imply diminishing returns to diversity (Grim et al., 2019). Performance is the best peak any team member reaches, plus noise representing other determinants of outcomes.
+Each simulated team explores a landscape of 50 positions, matching the 50-year age span. We vary two structural factors: team size (5 vs. 10 members) and landscape smoothness (2 vs. 4). Lower smoothness values produce rugged landscapes where diversity offers greater search benefits, whereas higher smoothness values imply diminishing returns to diversity (Grim et al., 2019). Performance is defined as the highest local peak reached when each team member hill-climbs from their starting position. Under landscapes where some regions systematically have higher peaks (e.g., one side or the middle), teams benefit from covering more distinct regions, plus noise representing other determinants of outcomes.
 
 ## Simulation Setup
 
@@ -75,10 +96,11 @@ Each simulated team explores a landscape of 50 positions, matching the 50-year a
 # The default n = 50 matches the 50-year age range (20-70) used for
 # team generation
 # Uses circular/wrap-around smoothing to avoid edge artifacts
-# add_gradient: If TRUE, adds a macro-scale structure
-#   (linear/quadratic/none) where some regions systematically have
-#   higher peaks than others. This ensures that team coverage matters -
-#   diverse teams can reach regions that homogeneous teams cannot.
+# add_gradient: If TRUE, adds a macro-scale structure (linear/quadratic/none)
+#   where some regions systematically have higher peaks than others. This
+#   ensures that team coverage matters: teams that start from a wider range of
+#   positions are more likely to include at least one member close to the best
+#   region.
 # gradient_weight: Controls the relative contribution of macro gradient
 #   vs micro ruggedness. 0 = pure rugged landscape, 1 = pure gradient,
 #   0.3 = balanced mix. Keeping it moderate (0.2-0.4) maintains
@@ -105,9 +127,9 @@ generate_landscape <- function(n,
   )
   micro <- as.numeric(smooth_circular[(pad_size + 1):(pad_size + n)])
 
-  # Add macro-scale gradient (non-circular to preserve structure)
+  # Add macro-scale structure (non-circular to preserve structure)
   if (add_gradient) {
-    # Randomly choose gradient type for each landscape
+    # Randomly choose macro structure type for each landscape.
     gradient_type <- sample(
       c("linear", "quadratic", "none"),
       1,
@@ -145,8 +167,9 @@ generate_landscape <- function(n,
   as.numeric(landscape)
 }
 
-# Hill climbing: each agent moves to adjacent positions that improve
-# their score until reaching a local maximum (peak)
+# Hill climbing with bounded exploration:
+# each agent moves to adjacent positions that improve their score until
+# reaching a local maximum (peak).
 hill_climb <- function(start, landscape) {
   if (start > length(landscape) || start < 1) {
     stop("Starting position out of bounds.")
@@ -169,80 +192,20 @@ team_hill_climb <- function(team_starts, landscape) {
 }
 
 ## Generate teams with varying diversity levels
-generate_team <- function(size,
-                          n_teams,
-                          bounds = c(20, 70),
-                          p_two_cluster = 0.3,
-                          width_shape1 = 1,
-                          width_shape2 = 1) {
-  min_age   <- bounds[1]
-  max_age   <- bounds[2]
-  total_span <- max_age - min_age
+# Reuse the same role-based generator as in the metric comparison vignette,
+# but with a mix emphasising teams that occupy a similar number of age strata
+# while differing in how far those strata span the full 20–70 range. This
+# creates many cases where Blau (bin occupancy) is similar but coverage differs.
+team_profile_probs <- c(
+  single_cohort = 0.05,
+  career_ladder = 0.10,
+  balanced_roles = 0.35,
+  compact_balanced = 0.45,
+  tokenism = 0.05
+)
 
-  clamp_round <- function(x) {
-    round(pmin(pmax(x, min_age), max_age))
-  }
-
-  teams <- vector("list", n_teams)
-
-  for (i in seq_len(n_teams)) {
-
-    # 1. Draw a width (span) on [0, total_span]
-    # Mostly narrow, some wide
-    width_prop <- rbeta(1, width_shape1, width_shape2)
-    # At least 1 year
-    width <- max(1, width_prop * total_span)
-
-    # 2. Place that interval somewhere within [min_age, max_age]
-    start <- runif(1, min_age, max_age - width)
-    low   <- start
-    high  <- start + width
-
-    # 3. Decide on unimodal vs two-cluster
-    two_cluster <- runif(1) < p_two_cluster
-
-    if (!two_cluster) {
-      ages <- runif(size, low, high)
-      shape <- "unimodal"
-
-    } else {
-      # Two clusters with flexible relative sizes and separation
-      # Cluster sizes vary; extreme splits produce "outlier-like" teams
-      # Encourages unequal splits
-      w  <- rbeta(1, 0.8, 0.8)
-      n1 <- max(1, round(size * w))
-      n2 <- max(1, size - n1)
-      if (n1 + n2 > size) {
-        if (runif(1) < 0.5) n1 <- n1 - 1 else n2 <- n2 - 1
-      }
-
-      # Position clusters inside the span
-      # c1 somewhere in the left part, c2 somewhere in the right part
-      c1 <- runif(1, low + 0.1 * (high - low), low + 0.4 * (high - low))
-      c2 <- runif(1, low + 0.6 * (high - low), low + 0.9 * (high - low))
-
-      # Cluster SD scales with width (tighter for small spans)
-      sd_cluster <- 0.1 * (high - low)
-
-      ages <- c(
-        rnorm(n1, c1, sd_cluster),
-        rnorm(n2, c2, sd_cluster)
-      )
-
-      shape <- "two_cluster"
-    }
-    ages <- clamp_round(ages)
-
-    teams[[i]] <- tibble(
-      team_id           = paste0("Team_", size, "_", i),
-      age               = ages,
-      team_size         = size,
-      diversity_profile = shape,
-      diversity_prop    = width_prop
-    )
-  }
-
-  dplyr::bind_rows(teams)
+generate_team <- function(size, n_teams, ...) {
+  generate_age_teams(size, n_teams, profile_probs = team_profile_probs, ...)
 }
 
 
@@ -263,6 +226,7 @@ run_simulation <- function(team_size,
                           n_teams = 250,
                           n_landscapes = 250,
                           noise_factor = 2,
+                          perspective_block = 1,
                           teams = NULL) {
   if (is.null(teams)) {
     teams <- generate_team(team_size, n_teams)
@@ -326,8 +290,18 @@ run_simulation <- function(team_size,
       )
       team_positions <- round(team_positions)
       team_positions <- pmin(pmax(team_positions, 1), length(landscape))
+      
+      # Optional coarsening of starting positions (if desired for sensitivity
+      # checks): treat near-aged members as starting from effectively the same
+      # region, which further privileges coverage over redundancy.
+      if (!is.null(perspective_block) && perspective_block > 1) {
+        team_positions <- ((team_positions - 1) %/% perspective_block) * perspective_block + 1
+        team_positions <- pmin(pmax(team_positions, 1), length(landscape))
+      }
+      team_positions <- unique(team_positions)
 
-      # Get raw peak from hill climbing
+      # Each member hill-climbs from their starting position; team picks the
+      # best peak any member reaches.
       peak_raw <- team_hill_climb(team_positions, landscape)
 
       # Add constant noise to represent other factors affecting team
@@ -367,9 +341,7 @@ Before running the full simulation, we verify that the team generation approach 
 set.seed(123)
 diagnostic_teams <- generate_team(
   size = 5,
-  n_teams = 1000,
-  width_shape1 = .8,
-  width_shape2 = .8
+  n_teams = 1000
 )
 
 # Calculate CEI for diagnostic purposes
@@ -424,82 +396,112 @@ values representing different patterns of age distribution).
 ## Run simulations
 
 The simulation systematically varies team size (5 vs 10) and landscape
-smoothness (3 vs 8) in a 2x2 factorial design. Each condition is
+smoothness (2 vs 4) in a 2x2 factorial design. Each condition is
 replicated across multiple landscapes explored by multiple teams.
 
-**Note on computation time:** The simulation below runs 2,000,000 total
-team-landscape evaluations (1,000 teams x 500 landscapes x 1 run per
-team-landscape combination, across 4 conditions). With parallel
-processing, this takes approximately 20-25 minutes on a modern
-multi-core machine. Results are cached, so re-knitting the vignette will
-be much faster.
+**Note on computation time:** The full simulation is implemented as 100
+independent replications per condition. Each replication averages team
+performance across 10 landscapes, and then computes the correlation
+between diversity and performance (one correlation per replication). On a
+typical laptop this should run in well under a minute; results are
+cached.
 
 ```{r run-simulation, cache=TRUE}
 set.seed(1234)
+
 # Simulation parameters
-total_teams <- 1000        # Number of teams per condition
-total_landscapes <- 500    # Number of landscapes per condition
-chunks <- 50               # Split landscapes into chunks for progress tracking
+total_teams <- 1000              # Teams per condition
+replications <- 100              # Independent study replications per condition
+landscapes_per_replication <- 10 # Tasks/time points per study
+noise_factor <- 2                # Calibrates effect sizes to ~r = 0.2
+perspective_block <- 1           # Optional coarsening of start positions
 
-# Pre-generate teams for each condition combination
-# (teams are generated once per condition)
-pre_generated_teams <- expand.grid(
-  team_size = c(5, 10),
-  smooth_window = c(3, 8)
-) %>%
-  as_tibble() %>%
-  mutate(teams = purrr::map(team_size, ~ generate_team(.x, total_teams)))
+make_starts <- function(ages, landscape_n = 50) {
+  pos <- scales::rescale(ages, from = c(20, 70), to = c(1, landscape_n))
+  pos <- round(pos)
+  pos <- unique(pmin(pmax(pos, 1), landscape_n))
+  if (!is.null(perspective_block) && perspective_block > 1) {
+    pos <- ((pos - 1) %/% perspective_block) * perspective_block + 1
+    pos <- unique(pmin(pmax(pos, 1), landscape_n))
+  }
+  pos
+}
 
-# Define factorial conditions and replications (chunks)
-conditions <- expand.grid(
-  team_size = c(5, 10),
-  smooth_window = c(3, 8)
-) %>%
-  slice(rep(seq_len(n()), each = chunks)) %>%
-  mutate(
-    chunk = rep(
-      1:chunks,
-      times = nrow(expand.grid(
-        team_size = c(5, 10),
-        smooth_window = c(3, 8)
-      ))
+summarise_teams <- function(team_size, n_teams) {
+  teams <- generate_team(team_size, n_teams)
+  teams %>%
+    group_by(team_id) %>%
+    summarise(
+      starts = list(make_starts(age)),
+      CEI = compute_CEI(age, range = c(20, 70)),
+      Blau_5 = compute_Blau(age, bins = seq(20, 70, by = 5)),
+      Blau_10 = compute_Blau(age, bins = seq(20, 70, by = 10)),
+      GMD = compute_GMD(age),
+      CV = compute_cv(age),
+      SD = compute_sd(age),
+      .groups = "drop"
     )
-  ) %>%
-  left_join(pre_generated_teams, by = c("team_size", "smooth_window"))
+}
 
-# Run simulations in parallel over conditions, passing pre-generated
-# teams into run_simulation
-results <- with_progress({
+simulate_replication <- function(team_df, smooth_window) {
+  n <- 50L
+  constant_noise_sd <- stats::sd(stats::runif(n, min = 0, max = 100)) * noise_factor
+
+  perf_sum <- numeric(nrow(team_df))
+
+  for (k in seq_len(landscapes_per_replication)) {
+    landscape <- generate_landscape(n = n, smooth_window = smooth_window)
+    peak_map <- vapply(seq_len(n), hill_climb, landscape = landscape, numeric(1))
+
+    perf <- vapply(team_df$starts, function(starts) max(peak_map[starts]), numeric(1))
+    perf <- perf + stats::rnorm(length(perf), mean = 0, sd = constant_noise_sd)
+
+    # Standardise variance within each landscape so every landscape contributes equally
+    perf_sum <- perf_sum + as.numeric(scale(perf, center = FALSE))
+  }
+
+  result_mean <- perf_sum / landscapes_per_replication
+
+  tibble(
+    metric = c("CEI", "Blau_5", "Blau_10", "GMD", "CV", "SD"),
+    correlation = c(
+      cor(result_mean, team_df$CEI, use = "complete.obs"),
+      cor(result_mean, team_df$Blau_5, use = "complete.obs"),
+      cor(result_mean, team_df$Blau_10, use = "complete.obs"),
+      cor(result_mean, team_df$GMD, use = "complete.obs"),
+      cor(result_mean, team_df$CV, use = "complete.obs"),
+      cor(result_mean, team_df$SD, use = "complete.obs")
+    )
+  )
+}
+
+conditions <- tidyr::crossing(
+  team_size = c(5L, 10L),
+  smooth_window = c(2L, 4L),
+  chunk = seq_len(replications)
+)
+
+pre_generated_teams <- tidyr::crossing(
+  team_size = c(5L, 10L)
+) %>%
+  mutate(teams = purrr::map(team_size, ~ summarise_teams(.x, total_teams)))
+
+conditions <- conditions %>%
+  left_join(pre_generated_teams, by = "team_size")
+
+replication_corr <- with_progress({
   p <- progressr::progressor(steps = nrow(conditions))
-  furrr::future_pmap_dfr(
+  purrr::pmap_dfr(
     conditions,
     function(team_size, smooth_window, chunk, teams) {
-      sim_data <- run_simulation(
-        team_size,
-        smooth_window,
-        n_teams = total_teams,
-        n_landscapes = ceiling(total_landscapes / chunks),
-        teams = teams
-      )
-      p()  # Update progress after each simulation run
-      sim_data %>%
-        dplyr::mutate(
-          team_size = team_size,
-          smooth_window = smooth_window,
-          chunk = chunk
-        )
-    },
-    .options = furrr::furrr_options(seed = TRUE)
+      out <- simulate_replication(teams, smooth_window = smooth_window)
+      p()
+      out %>% mutate(team_size = team_size, smooth_window = smooth_window, chunk = chunk)
+    }
   )
 })
 
-results <- results %>%
-  mutate(landscape_key = paste(chunk, landscape_id, sep = "_"))
-
-# Save results for later use
-# write_rds(results, "power_simulation_results.rds")
-# To load: results <- read_rds("power_simulation_results.rds")
-
+replication_corr
 ```
 
 ## Estimating the effects
@@ -510,7 +512,7 @@ We estimate effect sizes and power by averaging team performance across 10 diffe
 3. Computes the correlation between diversity and performance across the full team sample
 4. Contributes one estimate to the distribution summarised below
 
-This approach mirrors empirical studies where team performance is assessed across multiple tasks while providing many more replications than the 50 compute chunks used during simulation.
+This approach mirrors empirical studies where team performance is assessed across multiple tasks while providing 100 independent replications per simulation condition.
 
 Throughout, sample size refers to the number of teams. Power calculations use two-sided tests with alpha = 0.05.
 
@@ -545,32 +547,6 @@ safe_power <- function(r, n) {
     )
   })
 }
-
-# Aggregate team-level performance (average across ~10 landscapes within each chunk)
-# Each chunk represents one independent study replication
-team_summary <- results %>%
-  group_by(team_size, smooth_window, chunk, team) %>%
-  summarize(result_mean = mean(result),
-            diversity_profile = first(diversity_profile),
-            diversity_prop = first(diversity_prop),
-            CEI = first(CEI),
-            Blau_5 = first(Blau_5),
-            Blau_10 = first(Blau_10),
-            GMD = first(GMD),
-            CV = first(CV),
-            SD = first(SD),
-            .groups = "drop")
-
-# Pivot diversity metrics to long format
-team_long <- team_summary %>%
-  pivot_longer(cols = c(CEI, Blau_5, Blau_10, GMD, CV, SD),
-               names_to = "metric", values_to = "value")
-
-# Compute the correlation (effect size) for each replication (chunk), condition, and metric
-replication_corr <- team_long %>%
-  group_by(team_size, smooth_window, chunk, metric) %>%
-  summarize(correlation = cor(result_mean, value, use = "complete.obs"),
-            .groups = "drop")
 
 # Aggregate across replications: mean effect size and its SE
 summary_corr <- replication_corr %>%
@@ -929,7 +905,7 @@ This simulation study assessed the statistical power of different diversity indi
 
 3. **Sample size requirements differ markedly**: To achieve 80% power, different metrics require substantially different sample sizes. The statistics generated above provide specific comparisons for each condition.
 
-4. **Patterns are consistent across conditions**: The relative performance of metrics was consistent across different team sizes (5 vs 10) and landscape smoothness levels (3 vs 8), suggesting the findings are robust to these contextual factors.
+4. **Patterns are consistent across conditions**: The relative performance of metrics was consistent across different team sizes (5 vs 10) and landscape smoothness levels (2 vs 4), suggesting the findings are robust to these contextual factors.
 
 **Implications for research:**
 
