@@ -25,6 +25,20 @@ Suggests:
     pkgdown,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
+Config/Needs/website:
+    furrr,
+    forcats,
+    GGally,
+    ggExtra,
+    ggtext,
+    gridExtra,
+    patchwork,
+    progressr,
+    purrr,
+    pwr,
+    rprojroot,
+    scales,
+    viridis
 Imports:
     dplyr,
     tibble,
