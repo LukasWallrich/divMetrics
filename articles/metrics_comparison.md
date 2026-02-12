@@ -471,12 +471,12 @@ Figure 1 below shows, for common values of Blau’s Index (Panel A) and
 the Coefficient of Variation (Panel B), teams with the highest and
 lowest CEI. This highlights that:
 
-- For Blau’s Index: CEI can vary substantially (up to 4-fold) even when
+- For Blau’s Index: CEI can vary substantially (up to 14-fold) even when
   Blau is constant, reflecting different distributions with the same
   binned categories.
-- For CV: Particularly for intermediate CV values, CEI can vary widely.
-  Towards high CV values, the relationship can reverse as evenness
-  drops.
+- For CV: Particularly for intermediate CV values, CEI can vary widely
+  (up to 5-fold). Towards high CV values, the relationship can reverse
+  as evenness drops.
 
 ``` r
 library(patchwork)
