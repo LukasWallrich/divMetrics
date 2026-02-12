@@ -55,8 +55,8 @@ reference:
 articles:
   - title: "Articles"
     contents:
-    - metrics_comparison
-    - statistical_power
+    - articles/metrics_comparison
+    - articles/statistical_power
 
 authors:
   Lukas Wallrich:
