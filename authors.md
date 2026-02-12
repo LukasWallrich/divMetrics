@@ -10,14 +10,14 @@
 Source:
 [`DESCRIPTION`](https://github.com/LukasWallrich/divMetrics/blob/main/DESCRIPTION)
 
-Wallrich L (2025). *divMetrics: Computation and Visual Exploration of
+Wallrich L (2026). *divMetrics: Computation and Visual Exploration of
 Diversity Indices*. R package version 0.2.0,
 <https://lukaswallrich.github.io/divMetrics/>.
 
     @Manual{,
       title = {divMetrics: Computation and Visual Exploration of Diversity Indices},
       author = {Lukas Wallrich},
-      year = {2025},
+      year = {2026},
       note = {R package version 0.2.0},
       url = {https://lukaswallrich.github.io/divMetrics/},
     }

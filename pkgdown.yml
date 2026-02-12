@@ -1,8 +1,10 @@
 pandoc: 3.1.11
 pkgdown: 2.2.0
 pkgdown_sha: ~
-articles: {}
-last_built: 2025-12-15T20:15Z
+articles:
+  articles/metrics_comparison: metrics_comparison.html
+  articles/statistical_power: statistical_power.html
+last_built: 2026-02-12T13:16Z
 urls:
   reference: https://lukaswallrich.github.io/divMetrics/reference
   article: https://lukaswallrich.github.io/divMetrics/articles

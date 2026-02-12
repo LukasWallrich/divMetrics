@@ -70,7 +70,7 @@ compute_Blau(ages, bin_width = 10)
 
 # Coverage and Evenness Index
 compute_CEI(ages, range = c(20, 65))
-#> [1] 0.4833333
+#> [1] 0.5066667
 
 # Gini Mean Difference (continuous)
 compute_GMD(ages)
@@ -105,7 +105,7 @@ compute_Blau(ages, group = teams, bin_width = 10, return_df = TRUE)
 #> 2 Team B 30, 31, 32, 33, 34        0
 ```
 
-### Rao with a distance matrix (categorical)
+### Rao with a distance matrix (only categorical)
 
 ``` r
 # Suppose categories A/B with a distance of 2 between them
@@ -122,13 +122,38 @@ compute_Rao(cats, D = D)
 ``` r
 # For continuous attributes, include CV, SD, GMD, CEI,
 # and (optionally) Blau if you pass bins/bin_width
-compute_all_metrics(ages, method = "continuous", bin_width = 10, return_df = TRUE)
-#> Using observed range for CEI. Specify 'range' for theoretical range.
+compute_all_metrics(ages, bin_width = 10, return_df = TRUE)
 #> # A tibble: 1 × 5
 #>      CV    SD   GMD  Blau   CEI
 #>   <dbl> <dbl> <dbl> <dbl> <dbl>
-#> 1 0.238  8.13  8.62  0.58 0.646
+#> 1 0.238  8.13  8.62  0.58 0.681
 ```
+
+## Visualizing metrics across groups
+
+Compare how different metrics rank teams or groups using
+[`plot_metric_comparison()`](https://lukaswallrich.github.io/divMetrics/reference/plot_metric_comparison.md):
+
+``` r
+# Compute metrics for multiple groups
+ages <- c(25, 28, 32, 45, 52, 30, 31, 32, 33, 34)
+teams <- c(rep("Team A", 5), rep("Team B", 5))
+
+# Calculate all metrics for each team
+results_df <- compute_all_metrics(ages, group = teams, bin_width = 10, return_df = TRUE)
+
+# Visualize how teams rank differently by metric
+library(ggplot2)
+plot_metric_comparison(results_df,
+                       metrics = c("CV", "SD", "GMD", "Blau", "CEI"),
+                       group_var = "group")
+```
+
+![](reference/figures/README-example-plotting-1.png)
+
+This visualization makes it easy to see which metrics diverge in their
+assessment of diversity, helping you choose the metric that best matches
+your research question.
 
 ## Choosing a Metric
 
@@ -146,8 +171,7 @@ Different metrics emphasize different aspects of diversity:
 - **Rao’s Index (categorical)**: Expected dissimilarity p’ D p using a
   supplied distance matrix
 
-See `vignette("metrics_comparison")` for detailed comparisons and
-guidance.
+See the article on “Comparing Metrics” for further details.
 
 ## Key Features
 
@@ -157,6 +181,15 @@ guidance.
 - Optional data frame output format
 - Implementation of the novel CEI metric (Coverage & Evenness Index)
 - Automatic binning options for Blau (variety)
+
+## Roadmap
+
+- [`compute_all_metrics()`](https://lukaswallrich.github.io/divMetrics/reference/compute_all_metrics.md)
+  for categorical attributes (integrating
+  [`compute_Rao()`](https://lukaswallrich.github.io/divMetrics/reference/compute_Rao.md)
+  with distance matrices)
+- Additional visualisation helpers for comparing metric behaviour across
+  teams
 
 ## References
 

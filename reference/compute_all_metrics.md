@@ -8,7 +8,6 @@ Convenience function to compute multiple diversity metrics at once.
 compute_all_metrics(
   x,
   group = NULL,
-  method = c("continuous", "categorical"),
   bin_width = NULL,
   bins = NULL,
   range = NULL,
@@ -21,18 +20,11 @@ compute_all_metrics(
 
 - x:
 
-  Numeric vector of values (continuous attributes) or character/factor
-  for categorical
+  Numeric vector of values (continuous attributes).
 
 - group:
 
   Optional grouping variable
-
-- method:
-
-  Character. One of "continuous" (default) or "categorical". When
-  "continuous", computes CV, SD, GMD, CEI (and Blau if binning is
-  provided). When "categorical", not yet implemented.
 
 - bin_width:
 
@@ -63,7 +55,6 @@ A data frame (if return_df = TRUE) or named list of diversity scores
 ``` r
 ages <- c(25, 28, 32, 45, 52)
 compute_all_metrics(ages, bin_width = 10)
-#> Using observed range for CEI. Specify 'range' for theoretical range.
 #> $CV
 #> [1] 0.3183733
 #> 
@@ -84,7 +75,6 @@ compute_all_metrics(ages, bin_width = 10)
 ages <- c(25, 28, 32, 45, 52, 30, 31, 32, 33, 34)
 teams <- c(rep("A", 5), rep("B", 5))
 compute_all_metrics(ages, group = teams, bin_width = 10, return_df = TRUE)
-#> Using observed range for CEI. Specify 'range' for theoretical range.
 #> # A tibble: 2 × 6
 #>   group     CV    SD   GMD  Blau   CEI
 #>   <chr>  <dbl> <dbl> <dbl> <dbl> <dbl>

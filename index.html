@@ -149,7 +149,7 @@
 <span></span>
 <span><span class="co"># Coverage and Evenness Index</span></span>
 <span><span class="fu"><a href="reference/compute_CEI.html">compute_CEI</a></span><span class="op">(</span><span class="va">ages</span>, range <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">20</span>, <span class="fl">65</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] 0.4833333</span></span>
+<span><span class="co">#&gt; [1] 0.5066667</span></span>
 <span></span>
 <span><span class="co"># Gini Mean Difference (continuous)</span></span>
 <span><span class="fu"><a href="reference/compute_GMD.html">compute_GMD</a></span><span class="op">(</span><span class="va">ages</span><span class="op">)</span></span>
@@ -183,7 +183,7 @@
 <span><span class="co">#&gt; 2 Team B 30, 31, 32, 33, 34        0</span></span></code></pre></div>
 </div>
 <div class="section level3">
-<h3 id="rao-with-a-distance-matrix-categorical">Rao with a distance matrix (categorical)<a class="anchor" aria-label="anchor" href="#rao-with-a-distance-matrix-categorical"></a>
+<h3 id="rao-with-a-distance-matrix-only-categorical">Rao with a distance matrix (only categorical)<a class="anchor" aria-label="anchor" href="#rao-with-a-distance-matrix-only-categorical"></a>
 </h3>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Suppose categories A/B with a distance of 2 between them</span></span>
@@ -201,12 +201,31 @@
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># For continuous attributes, include CV, SD, GMD, CEI,</span></span>
 <span><span class="co"># and (optionally) Blau if you pass bins/bin_width</span></span>
-<span><span class="fu"><a href="reference/compute_all_metrics.html">compute_all_metrics</a></span><span class="op">(</span><span class="va">ages</span>, method <span class="op">=</span> <span class="st">"continuous"</span>, bin_width <span class="op">=</span> <span class="fl">10</span>, return_df <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Using observed range for CEI. Specify 'range' for theoretical range.</span></span>
+<span><span class="fu"><a href="reference/compute_all_metrics.html">compute_all_metrics</a></span><span class="op">(</span><span class="va">ages</span>, bin_width <span class="op">=</span> <span class="fl">10</span>, return_df <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span><span class="co">#&gt; # A tibble: 1 × 5</span></span>
 <span><span class="co">#&gt;      CV    SD   GMD  Blau   CEI</span></span>
 <span><span class="co">#&gt;   &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;</span></span>
-<span><span class="co">#&gt; 1 0.238  8.13  8.62  0.58 0.646</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 0.238  8.13  8.62  0.58 0.681</span></span></code></pre></div>
+</div>
+<div class="section level2">
+<h2 id="visualizing-metrics-across-groups">Visualizing metrics across groups<a class="anchor" aria-label="anchor" href="#visualizing-metrics-across-groups"></a>
+</h2>
+<p>Compare how different metrics rank teams or groups using <code><a href="reference/plot_metric_comparison.html">plot_metric_comparison()</a></code>:</p>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="co"># Compute metrics for multiple groups</span></span>
+<span><span class="va">ages</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">25</span>, <span class="fl">28</span>, <span class="fl">32</span>, <span class="fl">45</span>, <span class="fl">52</span>, <span class="fl">30</span>, <span class="fl">31</span>, <span class="fl">32</span>, <span class="fl">33</span>, <span class="fl">34</span><span class="op">)</span></span>
+<span><span class="va">teams</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="st">"Team A"</span>, <span class="fl">5</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="st">"Team B"</span>, <span class="fl">5</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Calculate all metrics for each team</span></span>
+<span><span class="va">results_df</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/compute_all_metrics.html">compute_all_metrics</a></span><span class="op">(</span><span class="va">ages</span>, group <span class="op">=</span> <span class="va">teams</span>, bin_width <span class="op">=</span> <span class="fl">10</span>, return_df <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Visualize how teams rank differently by metric</span></span>
+<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://ggplot2.tidyverse.org" class="external-link">ggplot2</a></span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/plot_metric_comparison.html">plot_metric_comparison</a></span><span class="op">(</span><span class="va">results_df</span>,</span>
+<span>                       metrics <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"CV"</span>, <span class="st">"SD"</span>, <span class="st">"GMD"</span>, <span class="st">"Blau"</span>, <span class="st">"CEI"</span><span class="op">)</span>,</span>
+<span>                       group_var <span class="op">=</span> <span class="st">"group"</span><span class="op">)</span></span></code></pre></div>
+<p><img src="reference/figures/README-example-plotting-1.png" alt="" width="100%"></p>
+<p>This visualization makes it easy to see which metrics diverge in their assessment of diversity, helping you choose the metric that best matches your research question.</p>
 </div>
 <div class="section level2">
 <h2 id="choosing-a-metric">Choosing a Metric<a class="anchor" aria-label="anchor" href="#choosing-a-metric"></a>
@@ -226,7 +245,7 @@
 <li>
 <strong>Rao’s Index (categorical)</strong>: Expected dissimilarity p’ D p using a supplied distance matrix</li>
 </ul>
-<p>See <code>vignette("metrics_comparison")</code> for detailed comparisons and guidance.</p>
+<p>See the article on “Comparing Metrics” for further details.</p>
 </div>
 <div class="section level2">
 <h2 id="key-features">Key Features<a class="anchor" aria-label="anchor" href="#key-features"></a>
@@ -238,6 +257,15 @@
 <li>Optional data frame output format</li>
 <li>Implementation of the novel CEI metric (Coverage &amp; Evenness Index)</li>
 <li>Automatic binning options for Blau (variety)</li>
+</ul>
+</div>
+<div class="section level2">
+<h2 id="roadmap">Roadmap<a class="anchor" aria-label="anchor" href="#roadmap"></a>
+</h2>
+<ul>
+<li>
+<code><a href="reference/compute_all_metrics.html">compute_all_metrics()</a></code> for categorical attributes (integrating <code><a href="reference/compute_Rao.html">compute_Rao()</a></code> with distance matrices)</li>
+<li>Additional visualisation helpers for comparing metric behaviour across teams</li>
 </ul>
 </div>
 <div class="section level2">
@@ -287,6 +315,7 @@
 <h2 data-toc-skip>Dev status</h2>
 <ul class="list-unstyled">
 <li><a href="https://lifecycle.r-lib.org/articles/stages.html" class="external-link"><img src="https://img.shields.io/badge/lifecycle-experimental-orange.svg" alt="Lifecycle: experimental"></a></li>
+<li><a href="https://github.com/LukasWallrich/divMetrics/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/LukasWallrich/divMetrics/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a></li>
 </ul>
 </div>
 

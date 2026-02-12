@@ -35,5 +35,3 @@ Helper functions for computing and visualizing diversity
   : Compute All Diversity Metrics
 - [`plot_metric_comparison()`](https://lukaswallrich.github.io/divMetrics/reference/plot_metric_comparison.md)
   : Compare Multiple Diversity Metrics
-- [`report_teams()`](https://lukaswallrich.github.io/divMetrics/reference/report_teams.md)
-  : Report Teams

@@ -1,4 +1,4 @@
 # License
 
     YEAR: 2025
-    COPYRIGHT HOLDER: divMetrics authors
+    COPYRIGHT HOLDER: Lukas Wallrich
