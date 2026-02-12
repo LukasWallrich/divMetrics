@@ -51,7 +51,6 @@ reference:
     contents:
       - compute_all_metrics
       - plot_metric_comparison
-      - report_teams
 
 articles:
   - title: "Articles"
